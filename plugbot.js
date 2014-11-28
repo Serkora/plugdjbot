@@ -50,6 +50,7 @@ function start(){
 	// Also adds the "file input" field in the chat to upload necessary files
 	// As soon as the files have been selected (all at once), automatically sends the 
 	// "/start" command and bot turns on, saying "I am K.I.T.T." in chat log.
+	// for some reason autosend of "/start" is not always working.
 	if (typeof API !== 'undefined' && API.enabled){
 		s = "/start"
 		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(s)"/></div>')
@@ -233,7 +234,7 @@ bothangmanconsole = function(language){
  	API.on(API.CHAT_COMMAND, hangcommands);
 };
 
-		// can only be used by bot himself. Mostly copies of 'botresonses' with console.log
+		// can only be used by bot himself. Mostly copies of 'botresponses' with console.log
 		// instead of API.sendChat. Info on those can be found in the respective
 		// "botrespones" commands. Some internal stuff like "/export" song list or 
 		// "/flush" roulette/cat limit and dropped users lists.
