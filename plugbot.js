@@ -43,6 +43,11 @@ var hangcount = 0
 var windowstats = window
 var windowsongs = window
 
+var commands = new Array();
+var responses = new Array();
+
+var s = "/start"
+
 
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
@@ -121,7 +126,11 @@ botstart = function(){
 	API.on(API.CHAT, function(data){
 	if (data.message[0]==="!"){
 		botresponses(data)
-		};
+		} else{
+			if (data.message.slice(0,9) ==="@K.I.T.T."){
+				botresponses(data)
+			}
+		}
 	chats++
 	});
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on)
@@ -391,9 +400,14 @@ function botresponses(message){
 		API.moderateDeleteChat(message.cid) // if playing hangman — leaves them to let 
 	}										// people see incorrect letters/words
 	uname = message.un					
-	chat = message.message.toLowerCase()	// just for convenience
-	chat_orig = message.message
-	uid = message.uid
+	if (message.message[0]==="@"){
+		chat = message.message.slice(10,message.message.length).toLowerCase()
+		chat_orig = message.message.slice(10,message.message.length)
+	} else{
+		chat = message.message.toLowerCase()	// just for convenience
+		chat_orig = message.message				// and it backfired.
+		uid = message.uid
+	}
 	
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
 		API.sendChat("@SomethingNew psssssssss")// an action (if proper command was given) will 	
@@ -421,8 +435,18 @@ function botresponses(message){
 			API.sendChat("I'm sorry, you have exceeded your daily cat limit")
 			}
 	};
-	if (chat==="!bean"){
-		API.sendChag("@"+uname+" Зубочистку?")
+	if (chat.slice(0,5)==="!bean"){
+		if (chat.length===5){
+			rec = uname
+		} else {
+			if (chat.slice(6,9)==="rnd") {
+				users = API.getUsers()
+				rec = users[Math.floor(Math.random()*users.length)].username
+			} else {
+				rec = chat_orig.slice(6,chat.length)
+			}
+		}
+			API.sendChat("@"+rec+" Зубочистку?")	
 	};
 	if (chat==="!asian"){		// personal collection of clothed asian cuties
 			ind=Math.floor(Math.random()*asianlinks.length)	
@@ -578,6 +602,26 @@ function botresponses(message){
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 		}
 	};	
+	if (chat.slice(0,4)==="!add") {
+		data = chat.split(" ")
+		if (data.length<3){return}
+		commands.push(data[1])
+		responses.push(data.slice(2,data.length).join(" "))
+	};
+	if (commands.indexOf(chat)>-1){
+		API.sendChat(responses[commands.indexOf(chat)])
+	};	
+	if (chat.slice(0,6)==="!relay") {
+		data = chat_orig.split(" ")
+		if (data.indexOf("-r") > -1) {
+			rec = data[2]
+			text = data.slice(3,data.length).join(" ")
+			msg = "@"+rec+" "+text
+		} else{
+			msg = data.slice(1,data.length).join(" ")
+		}
+		API.sendChat(msg)
+	};
 };
 
 		// supporting/action functions
