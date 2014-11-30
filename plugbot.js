@@ -396,9 +396,9 @@ function chatcommands(command){
 
 		// Bot's responses to "!command".
 function botresponses(message){
-	if (mode != "hangman"){					// deletes the "!command" message from chat
-		API.moderateDeleteChat(message.cid) // if playing hangman — leaves them to let 
-	}										// people see incorrect letters/words
+	if (message.slice(0,5)!="!word" && message.slice(0,7)!="!letter"){	// if that wasn't a hangman
+		API.moderateDeleteChat(message.cid)  							// command, then deletes it.
+	}											// leaves hangman commands so that people know the wrong letters/words.
 	uname = message.un					
 	if (message.message[0]==="@"){
 		chat = message.message.slice(10,message.message.length).toLowerCase()
@@ -422,7 +422,7 @@ function botresponses(message){
 	};
 	
 	if (chat==="!meow"){			// send a random link to a cat in chat.
-		if (!(uname in catusr) || catusr[uname][0]<10){
+		if ((!(uname in catusr) || catusr[uname][0]<10) && uname!="petrowalek"){
 			ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
 			API.sendChat("@"+uname+" Here's your cat, good sir. "+catlinks[ind])
 			if (uname in catusr) {
@@ -449,9 +449,11 @@ function botresponses(message){
 			API.sendChat("@"+rec+" Зубочистку?")	
 	};
 	if (chat==="!asian"){		// personal collection of clothed asian cuties
+		if (uname!="petrowalek"){
 			ind=Math.floor(Math.random()*asianlinks.length)	
 			API.sendChat("@"+uname+" これはペンです. "+asianlinks[ind])
 		}
+	};
 	if (chat==="!mehskip"){		// skip the track if there are 5+ more mehs
 		score=API.getScore()				// than woots.
 		if (score.negative>=score.positive+5){
@@ -566,6 +568,8 @@ function botresponses(message){
 			wlc = [];
 	 		wlcn = [];
 			usrlft = {};
+			catusr = new Array();
+			rolust = new Array();
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
@@ -747,10 +751,17 @@ function hangchat(data){
 	uname = data.un
 	if (msg.slice(0,7)==="!letter"){
 		hangman(msg.slice(8,msg.length).toLowerCase(),"letter",uname)
-	}
+	};
 	if (msg.slice(0,5)==="!word"){
 		hangman(msg.slice(6,msg.length).toLowerCase(),"word",uname)
-	}
+	};
+	if (msg==="!hangmanstop"){
+		mode = "normal"
+		hangmanword = ""
+		hangmanwordg = ""
+		hangcount = 0
+		API.off(API.CHAT, hangchat)
+	};
 };
 
 function hangmanconsole(chat,type,name){
@@ -836,6 +847,7 @@ function hangman(chat,type,name){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
+		hangcount = 0
 		API.off(API.CHAT, hangchat)
 	};
 	if (hangcount>=10){
@@ -843,6 +855,7 @@ function hangman(chat,type,name){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
+		hangcount = 0
 		API.off(API.CHAT, hangchat)
 	};
 };
