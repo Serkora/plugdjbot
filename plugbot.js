@@ -127,7 +127,7 @@ botstart = function(){
 	if (data.message[0]==="!"){
 		botresponses(data)
 		} else{
-			if (data.message.slice(0,9) ==="@K.I.T.T."){
+			if (data.message.slice(0,2) ==="@K.I.T.T."){
 				botresponses(data)
 			}
 		}
@@ -396,7 +396,7 @@ function chatcommands(command){
 
 		// Bot's responses to "!command".
 function botresponses(message){
-	if (message.slice(0,5)!="!word" && message.slice(0,7)!="!letter"){	// if that wasn't a hangman
+	if (message.message.slice(0,5)!="!word" && message.message.slice(0,7)!="!letter"){	// if that wasn't a hangman
 		API.moderateDeleteChat(message.cid)  							// command, then deletes it.
 	}											// leaves hangman commands so that people know the wrong letters/words.
 	uname = message.un					
@@ -410,7 +410,7 @@ function botresponses(message){
 	}
 	
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
-		API.sendChat("@SomethingNew psssssssss")// an action (if proper command was given) will 	
+		setTimeout(function(){API.sendChat("@SomethingNew psssssssss")},1500)// an action (if proper command was given) will 	
 		};										// also piss on him.
 		
 	if (chat==="!kitt"){
@@ -555,8 +555,8 @@ function botresponses(message){
 		}
 		if (usname in usrlft) {
 			API.sendChat(usname+"'s last position was "+usrlft[usname][0]+" at "+usrlft[usname][1]+":"+("0"+usrlft[usname][2]).slice(-2)+" GMT+03")
-			API.moderateAddDJ(String(uid))							// adds user to the queue
-			API.moderateMoveDJ(uid, parseInt(usrlft[usname][0])) 	// moves to that position if mod.
+			setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
+			setTimeout(function(){API.moderateMoveDJ(uid, parseInt(usrlft[usname][0]))},1000) 	// moves to that position if mod.
 		} else{
 			API.sendChat(usname+" is not in the list. Sorry.")
 		}
@@ -578,7 +578,8 @@ function botresponses(message){
 	if (chat==="!boooooring"){
 		// skips longs tracks if asked
 		tl = API.getMedia().duration
-		if (tl>600)	{
+		score = API.getScore()
+		if (tl>600 && score.negative>2)	{
 			API.sendChat("Track is too long. Skipping")
 			API.moderateForceSkip()
 		}
@@ -683,7 +684,11 @@ function lftdjcheck(object){
 function mehskip(){
 	// skips the awful awful track.
 	if (API.getScore().negative>=API.getScore().positive+5){
+		djname = API.getDJ().username
 		API.moderateForceSkip()
+		if (Math.random() > 0.6){
+			API.sendChat("@"+djname+" Вы киберунижены.")
+		}
 	}
 };
 
