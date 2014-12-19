@@ -46,8 +46,14 @@ var windowsongs = window
 var commands = new Array();
 var responses = new Array();
 
+var IssuedCommands = {}
+
 var s = "/start"
 
+var prev_chat_uid = 0
+var this_chat_uid = 0
+
+var fouls = {}
 
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
@@ -124,14 +130,16 @@ botstart = function(){
 	
 	// Chat responses
 	API.on(API.CHAT, function(data){
-	if (data.message[0]==="!"){
-		botresponses(data)
-		} else{
-			if (data.message.slice(0,2) ==="@K.I.T.T."){
-				botresponses(data)
-			}
-		}
-	chats++
+		prev_chat_uid = this_chat_uid
+		this_chat_uid = data.uid
+		if (data.message[0]==="!"){
+			botresponses(data)
+		}// else{
+	//		if (data.message.slice(0,2) ==="@K.I.T.T."){
+	//			botresponses(data)
+	//		}
+	//	}
+		chats++
 	});
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on)
 	API.on(API.CHAT_COMMAND, chatcommands);
@@ -295,6 +303,9 @@ function chatcommands(command){
 		for (key in catusr){
 			delete catusr[key]
 		}
+		for (key in IssuedCommands){
+			delete issuedCommands[key]
+		}
 	};
 	if (command==="/export"){
 		// exports songlist in the popup window, since writing to local file from within
@@ -362,7 +373,7 @@ function chatcommands(command){
 		date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
 		console.log(songlist[i][1]+" — "+songlist[i][2]+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
 	};
-	if (command.slice(0,8)==="!lastpos") {
+	if (command.slice(0,8)==="/lastpos") {
 		if (chat.length<10) { 			// if no name after "!lastpos", assumes
 			usname = "frederik.torve"	// the user wants to know about himself
 		} else {							
@@ -392,26 +403,42 @@ function chatcommands(command){
 			console.log("@"+uname+" I'm sorry, you can only reroll once.")
 		}
 	};
+	if (command==="/issuedcommands") {
+		console.log(IssuedCommands)
+	};
 };
 
 		// Bot's responses to "!command".
 function botresponses(message){
-	if (message.message.slice(0,5)!="!word" && message.message.slice(0,7)!="!letter"){	// if that wasn't a hangman
-		API.moderateDeleteChat(message.cid)  							// command, then deletes it.
-	}											// leaves hangman commands so that people know the wrong letters/words.
-	uname = message.un					
-	if (message.message[0]==="@"){
-		chat = message.message.slice(10,message.message.length).toLowerCase()
-		chat_orig = message.message.slice(10,message.message.length)
-	} else{
-		chat = message.message.toLowerCase()	// just for convenience
-		chat_orig = message.message				// and it backfired.
-		uid = message.uid
+	//if (message.message.slice(0,5)=="!word" && message.message.slice(0,7)=="!letter"){	// if that wasn't a hangman
+	//	API.moderateDeleteChat(message.cid)  							// command, then deletes it.
+	//}											// leaves hangman commands so that people know the wrong letters/words.
+
+	if (prev_chat_uid != this_chat_uid) {
+		API.moderateDeleteChat(message.cid)
+		this_chat_uid = 0
 	}
 	
+	var uname = message.un;					
+	var chat = message.message.toLowerCase();	// just for convenience
+	var chat_orig = message.message;			// aaand it backfired.
+	var uid = message.uid;
+	
+	if (uid in IssuedCommands && IssuedCommands[uid][0] === chat) {
+			IssuedCommands[uid][1]++
+	} else {
+		IssuedCommands[uid] = [chat,1]
+		clearissued(chat,uid)
+	}
+	
+	if (IssuedCommands[uid][1] >= 6) {
+		abusemute(uid)
+		API.sendChat("You seem to be using the bot wrong")
+	};
+	
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
-		setTimeout(function(){API.sendChat("@SomethingNew psssssssss")},1500)// an action (if proper command was given) will 	
-		};										// also piss on him.
+		setTimeout(function(){API.sendChat("@SomethingNew PSSSSSSSSS")},1500)// an action (if proper command was given) will 	
+	};										// also piss on him.
 		
 	if (chat==="!kitt"){
 		if (Math.random()>=0.3){
@@ -422,7 +449,7 @@ function botresponses(message){
 	};
 	
 	if (chat==="!meow"){			// send a random link to a cat in chat.
-		if ((!(uname in catusr) || catusr[uname][0]<10) && uname!="petrowalek"){
+		if ((!(uname in catusr) || catusr[uname][0]<10)){
 			ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
 			API.sendChat("@"+uname+" Here's your cat, good sir. "+catlinks[ind])
 			if (uname in catusr) {
@@ -433,13 +460,13 @@ function botresponses(message){
 			}
 		}else{
 			API.sendChat("I'm sorry, you have exceeded your daily cat limit")
-			}
+		}
 	};
-	if (chat.slice(0,5)==="!bean"){
+	if (chat.split(" ")[0]==="!bean"){
 		if (chat.length===5){
 			rec = uname
 		} else {
-			if (chat.slice(6,9)==="rnd") {
+			if (chat.split(" ")[1]==="rnd") {
 				users = API.getUsers()
 				rec = users[Math.floor(Math.random()*users.length)].username
 			} else {
@@ -449,10 +476,8 @@ function botresponses(message){
 			API.sendChat("@"+rec+" Зубочистку?")	
 	};
 	if (chat==="!asian"){		// personal collection of clothed asian cuties
-		if (uname!="petrowalek"){
-			ind=Math.floor(Math.random()*asianlinks.length)	
-			API.sendChat("@"+uname+" これはペンです. "+asianlinks[ind])
-		}
+		ind=Math.floor(Math.random()*asianlinks.length)	
+		API.sendChat("@"+uname+" これはペンです. "+asianlinks[ind])
 	};
 	if (chat==="!mehskip"){		// skip the track if there are 5+ more mehs
 		score=API.getScore()				// than woots.
@@ -471,6 +496,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!enablejoin"){
@@ -479,6 +505,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 		// Let the bot join/leave DJ position. Play music when there is no one around, for example,
@@ -489,6 +516,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!botjoin"){
@@ -497,6 +525,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!botstop"){
@@ -506,6 +535,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!botstart"){
@@ -514,6 +544,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!botjoin"){
@@ -522,6 +553,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 		// returns random number from 0 to 100. Useful for settling arguments.
@@ -546,19 +578,35 @@ function botresponses(message){
 	};
 
 		// send a chat with user's last position before leaving the queue
-	if (chat.slice(0,8)==="!lastpos") {
-		if (chat.length<10) { 	// if no name after "!lastpos", assumes
+	if (chat.split(" ")[0]==="!lastpos") {
+		if (chat.length<9) { 	// if no name after "!lastpos", assumes
 			usname = uname		// the user wants to know about himself
-		} else {							
+		} else {
+			if (chat.split(" ")[0] == chat.split(" ")[1]) {
+				if (fouls[uid] === 1) {
+					console.log("muting "+uid)
+					abusemute(uid)
+				} else {
+					API.sendChat("@"+uname+" If you try that again, punishment will befall you")
+					fouls[uid] = 1
+				}
+			}
 			l = chat.length
 			usname = chat_orig.slice(9,l)
+			audience = API.getAudience()
+			for (var key in audience) {
+				if (audience[key].username === usname) {
+					uid = audience[key].id
+					break
+				}
+			}
 		}
 		if (usname in usrlft) {
 			API.sendChat(usname+"'s last position was "+usrlft[usname][0]+" at "+usrlft[usname][1]+":"+("0"+usrlft[usname][2]).slice(-2)+" GMT+03")
 			setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
 			setTimeout(function(){API.moderateMoveDJ(uid, parseInt(usrlft[usname][0]))},1000) 	// moves to that position if mod.
 		} else{
-			API.sendChat(usname+" is not in the list. Sorry.")
+			 API.sendChat("@"+usname+" is not in the list. Sorry.")
 		}
 	};
 	if (chat==="!clearlists"){
@@ -573,6 +621,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 			}
 	};
 	if (chat==="!boooooring"){
@@ -605,18 +654,25 @@ function botresponses(message){
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
 		}
 	};	
-	if (chat.slice(0,4)==="!add") {
+	if (chat.split(" ")[0]==="!add") {
+		console.log("here")
 		data = chat.split(" ")
-		if (data.length<3){return}
-		commands.push(data[1])
-		responses.push(data.slice(2,data.length).join(" "))
+		if (data.length>=3) {
+			if (data[2][0] === "!" || data[2][0] === "/") {
+				abusemute(uid)
+			} else {
+				commands.push(data[1])
+				responses.push(data.slice(2,data.length).join(" "))
+			}
+		}
 	};
 	if (commands.indexOf(chat)>-1){
 		API.sendChat(responses[commands.indexOf(chat)])
 	};	
-	if (chat.slice(0,6)==="!relay") {
+	if (chat.split(" ")[0]==="!relay") {
 		data = chat_orig.split(" ")
 		if (data.indexOf("-r") > -1) {
 			rec = data[2]
@@ -882,5 +938,21 @@ function catlimit(uname){
 	// once every 24 hours clears the catlimit list
 	delete catusr[uname]
 }
+
+function abusemute(uid){
+	role = API.getUser(uid).role
+	API.moderateSetRole(uid,0)
+	API.moderateMuteUser(uid,1,API.MUTE.SHORT)
+	API.moderateSetRole(uid,role)
+};
+
+function clearissued(chat,uid){
+	setTimeout(function(){
+		if (IssuedCommands[uid][0] === chat) {
+			console.log("deleting key"+chat)
+			delete IssuedCommands[uid]
+		}},1000*10
+	);
+};
 
 start()
