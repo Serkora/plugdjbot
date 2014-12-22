@@ -431,7 +431,11 @@ function botresponses(message){
 		clearissued(chat,uid)
 	}
 	
-	if (IssuedCommands[uid][1] >= 6) {
+	if (IssuedCommands[uid][1] === 4) {
+		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you")
+	};
+	
+	if (IssuedCommands[uid][1] >= 5) {
 		abusemute(uid)
 		API.sendChat("You seem to be using the bot wrong")
 	};
@@ -579,17 +583,13 @@ function botresponses(message){
 
 		// send a chat with user's last position before leaving the queue
 	if (chat.split(" ")[0]==="!lastpos") {
+		var cont = true
 		if (chat.length<9) { 	// if no name after "!lastpos", assumes
 			usname = uname		// the user wants to know about himself
 		} else {
 			if (chat.split(" ")[0] == chat.split(" ")[1]) {
-				if (fouls[uid] === 1) {
-					console.log("muting "+uid)
-					abusemute(uid)
-				} else {
-					API.sendChat("@"+uname+" If you try that again, punishment will befall you")
-					fouls[uid] = 1
-				}
+					abuseban(uname, uid)
+					cont = false
 			}
 			l = chat.length
 			usname = chat_orig.slice(9,l)
@@ -606,7 +606,9 @@ function botresponses(message){
 			setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
 			setTimeout(function(){API.moderateMoveDJ(uid, parseInt(usrlft[usname][0]))},1000) 	// moves to that position if mod.
 		} else{
-			 API.sendChat("@"+usname+" is not in the list. Sorry.")
+			if (cont) {
+				API.sendChat("@"+usname+" is not in the list. Sorry.")
+			}
 		}
 	};
 	if (chat==="!clearlists"){
@@ -816,7 +818,7 @@ function hangchat(data){
 	if (msg.slice(0,5)==="!word"){
 		hangman(msg.slice(6,msg.length).toLowerCase(),"word",uname)
 	};
-	if (msg==="!hangmanstop"){
+	if (msg==="!hangmanstop" && data.uid in MasterList){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
@@ -942,8 +944,13 @@ function catlimit(uname){
 function abusemute(uid){
 	role = API.getUser(uid).role
 	API.moderateSetRole(uid,0)
-	API.moderateMuteUser(uid,1,API.MUTE.SHORT)
-	API.moderateSetRole(uid,role)
+	setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
+	setTimeout(function(){API.moderateSetRole(uid,role)},1000)
+};
+
+function abuseban(uname, uid){
+	API.sendChat("@"+uname+" Why are you being such a dipshit?")
+	setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
 };
 
 function clearissued(chat,uid){
@@ -951,7 +958,7 @@ function clearissued(chat,uid){
 		if (IssuedCommands[uid][0] === chat) {
 			console.log("deleting key"+chat)
 			delete IssuedCommands[uid]
-		}},1000*10
+		}},1000*300
 	);
 };
 
