@@ -614,7 +614,7 @@ function botresponses(message){
 			place = parseInt(usrlft[usname][0])
 			WORKQUEUE += 1
 			addandmove(uid,place)
-			setTimeout(function(){addandmove_deletechat(usname,place)},2500)
+			setTimeout(function(){addandmove_deletechat(usname,place,uid)},2500)
 		} else{
 			if (cont) {
 				API.sendChat("@"+usname+" is not in the list. Sorry.")
@@ -971,14 +971,14 @@ function addandmove(uid,place){
 	}
 };
 
-function addandmove_deletechat(name,position){
+function addandmove_deletechat(name,position,uid){
 	queue = API.getWaitList()
 	for (i=0; i<queue.length; i++) {
 		if (queue[i].username == name && (i+1) <= position) {
 			API.moderateDeleteChat(left_message[name])
 		} else{
 			WORKQUEUE += 1
-			addandmove(name,position)
+			addandmove(uid,position)
 		}
 	}
 };
@@ -1028,8 +1028,8 @@ function mesrec(data){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
 	}
 	if (data.message.indexOf("last position") > -1) {
-		data.split(" ")
-		name = data[0].slice(0,-2)
+		msg = data.message.split(" ")
+		name = msg[0].slice(0,-2)
 		left_message[name] = data.cid
 	}
 };
