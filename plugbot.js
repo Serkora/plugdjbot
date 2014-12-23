@@ -705,6 +705,9 @@ function botresponses(message){
 		}
 		API.sendChat(msg)
 	};
+	if (chat.split(" ")[0]==="!tweek"){
+		API.sendChat("накрыло немношк")
+	};
 };
 
 		// supporting/action functions
@@ -962,47 +965,50 @@ function catlimit(uname){
 }
 
 function addandmove(uid,place){
-	if (WORKQUEUE < 2) {
+	if (WORKQUEUE > 1) {
+		setTimeout(function(){addandmove(uid,place)},1000)
+	} else{
 		setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
 		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
 		WORKQUEUE -= 1
-	} else{
-		setTimeout(function(){addandmove(uid,place)},1000)
 	}
 };
 
 function addandmove_deletechat(name,position,uid){
 	queue = API.getWaitList()
+	moved = false
 	for (i=0; i<queue.length; i++) {
 		if (queue[i].username == name && (i+1) <= position) {
 			API.moderateDeleteChat(left_message[name])
-		} else{
-			WORKQUEUE += 1
-			addandmove(uid,position)
+			moved = true
 		}
+	}
+	if (!moved) {
+		WORKQUEUE += 1
+		addandmove(uid,position)
 	}
 };
 
 function abusemute(uid){
-	if (WORKQUEUE < 2){
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abusemute(uid)},1000)
+	} else{
 		API.sendChat("You seem to be using the bot wrong")
 		role = API.getUser(uid).role
 		API.moderateSetRole(uid,0)
 		setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
 		setTimeout(function(){API.moderateSetRole(uid,role)},1000)
 		WORKQUEUE -= 1
-	} else{
-		setTimeout(function(){abusemute(uid)},1000)
 	}
 };
 
 function abuseban(uname, uid){
-	if (WORKQUEUE < 2){
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abuseban(uname,uid)},1000)
+	} else{
 		API.sendChat("@"+uname+" Why are you being such a dipshit?")
 		setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
 		WORKQUEUE -= 1
-	} else{
-		setTimeout(function(){abuseban(uname,uid)},1000)
 	}
 };
 
