@@ -34,11 +34,11 @@ var asianlinks = new Array();
 var hangmanword = "";
 var hangmanwordg = "";
 
-var chats = 0						// used to count chat update rate
+var chats = 0;						// used to count chat update rate
 
-var mode = "normal"
-var state = ""
-var hangcount = 0
+var mode = "normal";
+var state = "";
+var hangcount = 0;
 
 var windowstats = window
 var windowsongs = window
@@ -46,14 +46,18 @@ var windowsongs = window
 var commands = new Array();
 var responses = new Array();
 
-var IssuedCommands = {}
+var IssuedCommands = {};
 
-var s = "/start"
+var s = "/start";
 
-var prev_chat_uid = 0
-var this_chat_uid = 0
+var prev_chat_uid = 0;
+var this_chat_uid = 0;
 
-var fouls = {}
+var fouls = {};
+
+var WORKQUEUE = 0;
+
+var left_message = {};
 
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
@@ -134,6 +138,9 @@ botstart = function(){
 		this_chat_uid = data.uid
 		if (data.message[0]==="!"){
 			botresponses(data)
+		}
+		if (data.uid === 5433970) {
+			mesrec(data)
 		}// else{
 	//		if (data.message.slice(0,2) ==="@K.I.T.T."){
 	//			botresponses(data)
@@ -152,6 +159,7 @@ botstart = function(){
 	API.on(API.ADVANCE, lftdjcheck);
 	API.on(API.ADVANCE, songlistupdate);
 	API.on(API.ADVANCE, statisticupdate);
+	API.on(API.ADVANCE, mrazotacheck);
 	
 	API.on(API.SCORE_UPDATE,function(data){				// compares the votes and calls
 		if (data.negative>=data.positive+5){			// "mehskip" in 5 seconds.
@@ -436,8 +444,8 @@ function botresponses(message){
 	};
 	
 	if (IssuedCommands[uid][1] >= 5) {
+		WORKQUEUE += 1
 		abusemute(uid)
-		API.sendChat("You seem to be using the bot wrong")
 	};
 	
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
@@ -603,8 +611,10 @@ function botresponses(message){
 		}
 		if (usname in usrlft) {
 			API.sendChat(usname+"'s last position was "+usrlft[usname][0]+" at "+usrlft[usname][1]+":"+("0"+usrlft[usname][2]).slice(-2)+" GMT+03")
-			setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
-			setTimeout(function(){API.moderateMoveDJ(uid, parseInt(usrlft[usname][0]))},1000) 	// moves to that position if mod.
+			place = parseInt(usrlft[usname][0])
+			WORKQUEUE += 1
+			addandmove(uid,place)
+			setTimeout(function(){addandmove_deletechat(usname,place)},2500)
 		} else{
 			if (cont) {
 				API.sendChat("@"+usname+" is not in the list. Sorry.")
@@ -617,9 +627,18 @@ function botresponses(message){
 			wlpn = [];
 			wlc = [];
 	 		wlcn = [];
-			usrlft = {};
-			catusr = new Array();
-			rolust = new Array();
+			for (key in usrlft){
+				delete usrlft[key]
+			}
+			for (key in rolusr){
+				delete rolusr[key]
+			}
+			for (key in catusr){
+				delete catusr[key]
+			}
+			for (key in IssuedCommands){
+				delete issuedCommands[key]
+			}
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
@@ -664,7 +683,8 @@ function botresponses(message){
 		data = chat.split(" ")
 		if (data.length>=3) {
 			if (data[2][0] === "!" || data[2][0] === "/") {
-				abusemute(uid)
+				WORKQUEUE +=1
+				abuseban(uid)
 			} else {
 				commands.push(data[1])
 				responses.push(data.slice(2,data.length).join(" "))
@@ -745,7 +765,7 @@ function mehskip(){
 		djname = API.getDJ().username
 		API.moderateForceSkip()
 		if (Math.random() > 0.6){
-			API.sendChat("@"+djname+" Вы киберунижены.")
+			setTimeout(function(){API.sendChat("@"+djname+" Вы киберунижены.")},250)
 		}
 	}
 };
@@ -941,16 +961,49 @@ function catlimit(uname){
 	delete catusr[uname]
 }
 
+function addandmove(uid,place){
+	if (WORKQUEUE < 2) {
+		setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
+		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
+		WORKQUEUE -= 1
+	} else{
+		setTimeout(function(){addandmove(uid,place)},1000)
+	}
+};
+
+function addandmove_deletechat(name,position){
+	queue = API.getWaitList()
+	for (i=0; i<queue.length; i++) {
+		if (queue[i].username == name && (i+1) <= position) {
+			API.moderateDeleteChat(left_message[name])
+		} else{
+			WORKQUEUE += 1
+			addandmove(name,position)
+		}
+	}
+};
+
 function abusemute(uid){
-	role = API.getUser(uid).role
-	API.moderateSetRole(uid,0)
-	setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
-	setTimeout(function(){API.moderateSetRole(uid,role)},1000)
+	if (WORKQUEUE < 2){
+		API.sendChat("You seem to be using the bot wrong")
+		role = API.getUser(uid).role
+		API.moderateSetRole(uid,0)
+		setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
+		setTimeout(function(){API.moderateSetRole(uid,role)},1000)
+		WORKQUEUE -= 1
+	} else{
+		setTimeout(function(){abusemute(uid)},1000)
+	}
 };
 
 function abuseban(uname, uid){
-	API.sendChat("@"+uname+" Why are you being such a dipshit?")
-	setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
+	if (WORKQUEUE < 2){
+		API.sendChat("@"+uname+" Why are you being such a dipshit?")
+		setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
+		WORKQUEUE -= 1
+	} else{
+		setTimeout(function(){abuseban(uname,uid)},1000)
+	}
 };
 
 function clearissued(chat,uid){
@@ -960,6 +1013,25 @@ function clearissued(chat,uid){
 			delete IssuedCommands[uid]
 		}},1000*300
 	);
+};
+
+function mrazotacheck(){
+	dur = API.getMedia().duration
+	queue = API.getWaitList().length
+	if (dur >= 9000 && queue > 1) {
+		API.moderateForceSkip()
+	}
+};	
+
+function mesrec(data){
+	if (data.message.indexOf("not in the list") > -1) {
+		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
+	}
+	if (data.message.indexOf("last position") > -1) {
+		data.split(" ")
+		name = data[0].slice(0,-2)
+		left_message[name] = data.cid
+	}
 };
 
 start()
