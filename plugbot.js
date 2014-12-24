@@ -11,26 +11,26 @@
 var DJJOIN = "yes"			// not in use currently
 							// list of user ids that can fully control the bot
 var MasterList=[4702482, 3737285, 4856012]	// — frederik.torve, Вася Пупкин, dbons
-var usrlft = {};			// list of users left while in a queue. associative array 
+var usrlft = Object.create(null);			// list of users left while in a queue. associative array 
 							// with 'key' being username. Holds position and time.
-var wlc = new Array()		
-var wlcn = new Array()		// wait list arrays. Previous and new (after wait_list_update
-var wlp = new Array()		// event). ...n only holds usernames instead of user json objects
-var wlpn = new Array()
+var wlc = [];	
+var wlcn = [];		// wait list arrays. Previous and new (after wait_list_update
+var wlp = [];		// event). ...n only holds usernames instead of user json objects
+var wlpn = [];
 
 var catusr = {};
 var rolusr = {};
 
-var songlist = new Array();			// "associative list". Actually, no.
-var songstats = new Array();
-var songstatsraw = new Array();
+var songlist = [];			// "associative list". Actually, no.
+var songstats = [];
+var songstatsraw = [];
 
-var rawlist = new Array();
-var dictru = new Array();
-var dicteng = new Array();
-var catlinks = new Array();
-var roulette = new Array();
-var asianlinks = new Array();
+var rawlist = [];
+var dictru = [];
+var dicteng = [];
+var catlinks = [];
+var roulette = [];
+var asianlinks = [];
 var hangmanword = "";
 var hangmanwordg = "";
 
@@ -43,21 +43,28 @@ var hangcount = 0;
 var windowstats = window
 var windowsongs = window
 
-var commands = new Array();
-var responses = new Array();
+var commands = [];
+var responses = [];
+var comminput = [];
+var defaultcommands = ["!kitt", "!meow", "!bean", "!relay", "!add", "!lastpos", "!lastplayed", 
+						"!asian", "!botjoin", "!botleave", "!botstart", "!botstop", "!mehskip", "!boooring",
+						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll!", "!reroll", "!woworoll"]
+var allissuedcommands = [];
 
-var IssuedCommands = {};
+var IssuedCommands = Object.create(null);
 
 var s = "/start";
 
 var prev_chat_uid = 0;
 var this_chat_uid = 0;
 
-var fouls = {};
+var fouls = Object.create(null);
 
 var WORKQUEUE = 0;
 
-var left_message = {};
+var left_message = Object.create(null);
+
+
 
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
@@ -271,36 +278,6 @@ function chatcommands(command){
 			console.log("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 		}
 	};
-	if (command==="/meow"){
-		ind=Math.floor(Math.random()*catlinks.length)
-		console.log("Here's you cat, good sir. "+catlinks[ind])
-	};
-	if (command==="/asian"){		// personal collection of clothed asian cuties
-			ind=Math.floor(Math.random()*asianlinks.length)	
-			console.log("@ これはペンです. "+asianlinks[ind])
-		}
-	if (command.slice(0,3)==="/lp") {
-		if (command.length<5) { 
-			uname = 'frederik.torve'
-		} else {
-			l = command.length
-			uname = command.slice(4,l)
-		}
-		if (uname in usrlft) {
-			console.log(uname+"'s last position was "+usrlft[uname][0]+" at "+usrlft[uname][1]+":"+usrlft[uname][2])
-		} else{
-			console.log(uname+" is not in the list. Sorry.")
-		}
-	};
-	if (command==="/clearlists") {
-		wlp = [];
-		wlpn = [];
-		wlc = [];
- 		wlcn = [];
-		usrlft = {};
-		rolusr = {};
-		catusr = {};
-	};
 	if (command==="/flush"){
 		for (key in usrlft){
 			delete usrlft[key]
@@ -362,58 +339,23 @@ function chatcommands(command){
 	if (command==="/hangmaneng"){
 		bothangmanconsole("eng")
 	};
-	if (command==="/lastplayed"){
-		song=API.getMedia()
-		authorlower = song.author.toLowerCase()
-		titlelower = song.title.toLowerCase()
-		for (i=0; i<songlist.length; i++){
-			if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)){
-				dt = songlist[i][3]
-				date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
-				console.log(song.author+" — "+song.title+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
-				break
-			}
-		}
-	};
-	if (command==="/lastplayedr"){
-		i=Math.floor(Math.random()*5)
-		dt = songlist[i][3]
-		date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
-		console.log(songlist[i][1]+" — "+songlist[i][2]+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
-	};
-	if (command.slice(0,8)==="/lastpos") {
-		if (chat.length<10) { 			// if no name after "!lastpos", assumes
-			usname = "frederik.torve"	// the user wants to know about himself
-		} else {							
-			l = chat.length
-			usname = command.slice(9,l)
-		}
-		if (usname in usrlft) {
-			console.log(usname+"'s last position was "+usrlft[usname][0]+" at "+usrlft[usname][1]+":"+("0"+usrlft[usname][2]).slice(-2)+" UTC")
-		} else{
-			console.log(usname+" is not in the list. Sorry.")
-		}
-	};
-	if (command==="/roll"){
-		uid = 4702482
-		console.log("here")
-		uname = "me"
-		if (!(uid in rolusr) || rolusr[uid]<2){
-			roll=Math.round(Math.random()*roulette.length)
-			console.log("here")
-			console.log("@"+uname+" Your next song must be: "+roulette[roll])
-			if (uid in rolusr){
-				rolusr[uid]++
-			} else {
-				rolusr[uid]=1
-			}
-		} else {
-			console.log("@"+uname+" I'm sorry, you can only reroll once.")
-		}
-	};
 	if (command==="/issuedcommands") {
 		console.log(IssuedCommands)
 	};
+	if (command==="/exportcomms") {
+		data = comminput[0].join(" - ")
+		for (i=1; i<comminput.length; i++){
+			data = data+"\r\n"+comminput[i].join(" - ")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+	}
+	if (command==="/exportallcomms") {
+		data = allissuedcommands[0].join(" - ")
+		for (i=1; i<allissuedcommands.length; i++){
+			data = data+"\r\n"+allissuedcommands[i].join(" - ")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+	}
 };
 
 		// Bot's responses to "!command".
@@ -431,6 +373,8 @@ function botresponses(message){
 	var chat = message.message.toLowerCase();	// just for convenience
 	var chat_orig = message.message;			// aaand it backfired.
 	var uid = message.uid;
+	
+	allissuedcommands.push([uname, new Date(), chat_orig])
 	
 	if (uid in IssuedCommands && IssuedCommands[uid][0] === chat) {
 			IssuedCommands[uid][1]++
@@ -458,8 +402,8 @@ function botresponses(message){
 		} else{
  			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 		}
+		return
 	};
-	
 	if (chat==="!meow"){			// send a random link to a cat in chat.
 		if ((!(uname in catusr) || catusr[uname][0]<10)){
 			ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
@@ -473,6 +417,7 @@ function botresponses(message){
 		}else{
 			API.sendChat("I'm sorry, you have exceeded your daily cat limit")
 		}
+		return
 	};
 	if (chat.split(" ")[0]==="!bean"){
 		if (chat.length===5){
@@ -485,11 +430,13 @@ function botresponses(message){
 				rec = chat_orig.slice(6,chat.length)
 			}
 		}
-			API.sendChat("@"+rec+" Зубочистку?")	
+		API.sendChat("@"+rec+" Зубочистку?")
+		return
 	};
 	if (chat==="!asian"){		// personal collection of clothed asian cuties
 		ind=Math.floor(Math.random()*asianlinks.length)	
 		API.sendChat("@"+uname+" これはペンです. "+asianlinks[ind])
+		return
 	};
 	if (chat==="!mehskip"){		// skip the track if there are 5+ more mehs
 		score=API.getScore()				// than woots.
@@ -498,6 +445,7 @@ function botresponses(message){
 		} else{
 			API.sendChat("Skip no-no.")		// if not enough mehs — does not skip.
 		}
+		return
 	};
 		// stopjoin/enablejoin don't have an effect now. But may be used in future 
 		// to prevent residentDJs/bouncers from entering the queue at the event of sorts,
@@ -509,7 +457,8 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 	if (chat==="!enablejoin"){
 		if (MasterList.indexOf(message.uid)>-1){
@@ -518,7 +467,8 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 		// Let the bot join/leave DJ position. Play music when there is no one around, for example,
 		// without manually placing him in / kicking from the queue
@@ -529,7 +479,8 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 	if (chat==="!botjoin"){
 		if (MasterList.indexOf(message.uid)>-1){
@@ -538,7 +489,8 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 	if (chat==="!botstop"){
 		if (MasterList.indexOf(message.uid)>-1 && state==="running"){
@@ -548,7 +500,8 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 	if (chat==="!botstart"){
 		if (MasterList.indexOf(message.uid)>-1){
@@ -557,21 +510,14 @@ function botresponses(message){
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
-	};
-	if (chat==="!botjoin"){
-		if (MasterList.indexOf(message.uid)>-1){
- 			API.djJoin()
-		} else{
-			API.sendChat("@"+uname+" You do not have the security clearance for that action."
-						+" If you try this again, you will be prosecuted to the full extent of the law.")
-			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
 		// returns random number from 0 to 100. Useful for settling arguments.
 	if (chat==="!wowroll"){
 		roll=Math.round(Math.random()*100)
 		API.sendChat("@"+uname+" has rolled "+roll)
+		return
 	};
 		// Roulette. Max two rolls until one becomes a DJ. (Confirming that
 		// the rolled track was played is not really possible.)
@@ -587,17 +533,16 @@ function botresponses(message){
 		} else {
 			API.sendChat("@"+uname+" I'm sorry, you can only reroll once.")
 		}
+		return
 	};
-
 		// send a chat with user's last position before leaving the queue
 	if (chat.split(" ")[0]==="!lastpos") {
-		var cont = true
 		if (chat.length<9) { 	// if no name after "!lastpos", assumes
 			usname = uname		// the user wants to know about himself
 		} else {
 			if (chat.split(" ")[0] == chat.split(" ")[1]) {
-					abuseban(uname, uid)
-					cont = false
+				abuseban(uname, uid)
+				return
 			}
 			l = chat.length
 			usname = chat_orig.slice(9,l)
@@ -616,36 +561,21 @@ function botresponses(message){
 			addandmove(uid,place)
 			setTimeout(function(){addandmove_deletechat(usname,place,uid)},2500)
 		} else{
-			if (cont) {
-				API.sendChat("@"+usname+" is not in the list. Sorry.")
-			}
+			API.sendChat("@"+usname+" is not in the list. Sorry.")
 		}
+		return
 	};
-	if (chat==="!clearlists"){
+	if (chat==="!flush"){
 		if (MasterList.indexOf(message.uid)>-1){
-			wlp = [];
-			wlpn = [];
-			wlc = [];
-	 		wlcn = [];
-			for (key in usrlft){
-				delete usrlft[key]
-			}
-			for (key in rolusr){
-				delete rolusr[key]
-			}
-			for (key in catusr){
-				delete catusr[key]
-			}
-			for (key in IssuedCommands){
-				delete issuedCommands[key]
-			}
+			API.sendChat("/flush")
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
-			}
+		}
+		return
 	};
-	if (chat==="!boooooring"){
+	if (chat==="!boooring"){
 		// skips longs tracks if asked
 		tl = API.getMedia().duration
 		score = API.getScore()
@@ -653,6 +583,7 @@ function botresponses(message){
 			API.sendChat("Track is too long. Skipping")
 			API.moderateForceSkip()
 		}
+		return
 	};
 	if (chat==="!lastplayed"){
 		// info about current track, how many times it was played and when was the last.
@@ -667,6 +598,7 @@ function botresponses(message){
 				break
 			}
 		}
+		return
 	};
 	if (chat.slice(0,8)==="!hangman" && chat.length>=10){
 		// initializes hangman mode. Only people in the master list can start the game
@@ -677,22 +609,29 @@ function botresponses(message){
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
 			IssuedCommands[uid][1] = 5
 		}
+		return
 	};	
 	if (chat.split(" ")[0]==="!add") {
-		console.log("here")
 		data = chat.split(" ")
 		if (data.length>=3) {
-			if (data[2][0] === "!" || data[2][0] === "/") {
+			comminput.push([uname,chat_orig])
+			if (data[2][0] === "!" || data[2][0] === "/" || defaultcommands.indexOf(data[1]) > -1) {
 				WORKQUEUE +=1
 				abuseban(uid)
 			} else {
-				commands.push(data[1])
-				responses.push(data.slice(2,data.length).join(" "))
+				if (commands.indexOf(data[1])<0){
+					commands.push(data[1])
+					responses.push(data.slice(2,data.length).join(" "))
+				} else{
+					API.sendChat("That command already exists")
+				}
 			}
 		}
+		return
 	};
 	if (commands.indexOf(chat)>-1){
 		API.sendChat(responses[commands.indexOf(chat)])
+		return
 	};	
 	if (chat.split(" ")[0]==="!relay") {
 		data = chat_orig.split(" ")
@@ -703,10 +642,16 @@ function botresponses(message){
 		} else{
 			msg = data.slice(1,data.length).join(" ")
 		}
-		API.sendChat(msg)
+		if (msg.indexOf("!") === 0 || msg.indexOf("/") === 0) {
+			abuseban(uid)
+		} else{
+			API.sendChat(msg)
+		}
+		return
 	};
 	if (chat.split(" ")[0]==="!tweek"){
 		API.sendChat("накрыло немношк")
+		return
 	};
 };
 
@@ -981,6 +926,7 @@ function addandmove_deletechat(name,position,uid){
 		if (queue[i].username == name && (i+1) <= position) {
 			API.moderateDeleteChat(left_message[name])
 			moved = true
+			break
 		}
 	}
 	if (!moved) {
@@ -1034,8 +980,8 @@ function mesrec(data){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
 	}
 	if (data.message.indexOf("last position") > -1) {
-		msg = data.message.split(" ")
-		name = msg[0].slice(0,-2)
+		msg = data.message.split("'s position was")
+		name = msg[0]
 		left_message[name] = data.cid
 	}
 };
