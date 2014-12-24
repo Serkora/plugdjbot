@@ -356,6 +356,21 @@ function chatcommands(command){
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 	}
+	if (command.split(" ")[0]==="/add"){
+		data = command.split(" ")
+		if (data.length>=3) {
+			if (commands.indexOf(data[1])<0){
+				commands.push(data[1])
+				responses.push(data.slice(2,data.length).join(" "))
+			}
+		}
+	};
+	if (command.split(" ")[0]==="/remove"){
+		data = command.split(" ")
+		ind = commands.indexOf(data[1])
+		commands.splice(ind,1)
+		responses.splice(ind,1)
+	};
 };
 
 		// Bot's responses to "!command".
@@ -980,9 +995,10 @@ function mesrec(data){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
 	}
 	if (data.message.indexOf("last position") > -1) {
-		msg = data.message.split("'s position was")
+		msg = data.message.split("'s last position was")
 		name = msg[0]
 		left_message[name] = data.cid
+		console.log(name)
 	}
 };
 
