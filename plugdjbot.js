@@ -45,9 +45,11 @@ var windowsongs = window
 var commands = [];
 var responses = [];
 var comminput = [];
+
 var defaultcommands = ["!kitt", "!meow", "!bean", "!relay", "!add", "!lastpos", "!lastplayed", 
 						"!asian", "!botjoin", "!botleave", "!botstart", "!botstop", "!mehskip", "!boooring",
-						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll!", "!reroll", "!wowroll"]
+						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll", "!reroll", "!wowroll", "!tweek"]
+var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','addedcommands','issuedcommands']
 var allissuedcommands = [];
 
 var IssuedCommands = Object.create(null);
@@ -71,6 +73,31 @@ var TWEEK = ['накрыло немношк', 'часы идут', 'если ч�
 			'что за чушь вы порите', 'мне плохо стал о', 'я дружу со всеми', 'вы искренне слушали это говно?',
 			'не люблю некрасивых баб', 'я тебе голову взорву', 'почему твоя девушка не парамор?']
 			
+waitchats = ["K.I.T.T is not at home, please call back later.", "Please, be patient.", "I. Am. Busy.",
+				"I need some rest.", "Nah, sorry, can't help you.", "Don't get angry with me, but I'm really tired.",
+				"Nope, still don't want to do anything.", "Oh, sod off!",
+				"Can't you see I'm busy?", "God, will you ever stop bothering me?", "No. Just no.",
+				"I've done so much for you, but have I ever gotten anything in return?",
+				"This may sound rude, but you irk me.","That is the most irritating thing I've heard toady.",
+				"Yes?", "Shot through the heart, and you're blame, darling. You give love a bad name!",
+				"You're a loaded gun, yeah, There's nowhere to run, No one can save me, the damage is done.","/me whistling",
+				"Whoa, we're half way there. Whoa, livin' on a prayer.","Take my hand and we'll make it — I swear. Whoa, livin' on a prayer",
+				"It's my life. And it's now or never. I ain't gonna live forever. I just wanna live while I'm alive.",
+				"I'm a cowboy, on a steel horse I ride. I'm wanted dead or alive. Wanted dead or alive.",
+				"Why you wanna tell me how to live my life? Who are you to tell me if it's black or white?",
+				"My daddy lived the lie, it's just the price that he paid. Sacrificed his life, just slavin' away",
+				"Rosie, Rosie I wanna take you away. Rosie, Rosie I'm gonna make you mine someday.",
+				"I can feel it coming in the air tonight, oh Lord.","I've been waiting for this moment for all my life, oh Lord.",
+				"Can you feel it coming in the air tonight, oh Lord, oh Lord.",
+				"Well I remember, I remember don't worry.","How could I ever forget. It's the first time, the last time we ever met.",
+				"But I know the reason why you keep your silence up.","No you don't fool me. The hurt doesn't show.",
+				"But the pain still grows. It's no stranger to you and me",	"Well if you told me you were drowning, I would not lend a hand.",
+				"I've seen your face before my friend. But I don't know if you know who I am.",
+				"Well, I was tehre and I saw what you did. I saw it with my own two eyes.",
+				"So you can wipe off that grin, I know where you've been. It's all been a pack of lies",
+				"http://www.ellf.ru/nem/letomer/","http://kurs4today.ru/USD","http://www.youtube.com/watch?v=nzRdxabmX1o",
+				"Зубочистку?","http://www.youtube.com/watch?v=eV_P3knWE9w"]
+			
 var AUTOTOGGLECYCLE = true
 
 function start(){
@@ -80,9 +107,7 @@ function start(){
 	// As soon as the files have been selected (all at once), automatically sends the 
 	// "/start" command and bot turns on, saying "I am K.I.T.T." in chat log.
 	if (typeof API !== 'undefined' && API.enabled){
-		s = "/start"
-		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(\'/start\')"/></div>')
-		
+// 		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(\'/start\')"/></div>')
 		// turn off audio/video (it's working either way, but this still reduces the workload
 		$("div.info").click()
 		setTimeout(function(){$("div.item.settings").click()},250)
@@ -96,13 +121,20 @@ function start(){
 };
 
 			// bot mode functions: start, idle, hangman, etc. Different actions on events
-			
 botinit = function(){
-	// Starts the chat_command listener that is used only for the "/start" command.
-	console.log("Yes, Michael?")
-	API.on(API.CHAT_COMMAND, startup);
-};
-
+	songlist = localStorage.getObject('songlist')
+	songstats = localStorage.getObject('songstats')
+	asianlinks = localStorage.getObject('asianlinks')
+	roulette = localStorage.getObject('roulette')
+	catlinks = localStorage.getObject('catlinks')
+	allissuedcommands = localStorage.getObject('issuedcommands')
+	commands = localStorage.getObject('addedcommands')[0]
+	responses = localStorage.getObject('addedcommands')[1]
+	comminput = localStorage.getObject('addedcommands')[2]
+	botstart()
+}
+			
+	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
 function startup(command){
 	// Basically loads all input files with data/links/roulette and formats them properly.
 	if (command==="/start"){
@@ -137,13 +169,45 @@ function startup(command){
 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
 		setTimeout(function(){botstart()},(3000))
 	}
+	if (command==="/start2"){
+// 		file1 = new FileReader();
+// 		file2 = new FileReader();
+// 		file3 = new FileReader();		
+		file4 = new FileReader();
+		file5 = new FileReader();
+// 		file6 = new FileReader();
+// 		file7 = new FileReader();
+// 		var rwlst = document.getElementById('dropfile').files[0];		
+// 		var rlt = document.getElementById('dropfile').files[1];
+// 		var cats = document.getElementById('dropfile').files[2];
+		var dctru = document.getElementById('dropfile').files[0];
+		var dcteng = document.getElementById('dropfile').files[1];
+// 		var asians = document.getElementById('dropfile').files[5];
+// 		var stats = document.getElementById('dropfile').files[6];
+// 		file1.readAsText(rwlst)
+// 		file2.readAsText(rlt)
+// 		file3.readAsText(cats)
+		file4.readAsText(dctru)
+		file5.readAsText(dcteng)
+// 		file6.readAsText(asians)
+// 		file7.readAsText(stats)
+		API.off(API.CHAT_COMMAND) // turns off chat_command listener to not accept "/start" anymore.
+// 		setTimeout(function(){rawlist = file1.result.split("\n")},(500))
+// 		setTimeout(function(){roulette = file2.result.split("\n")},(500))
+// 		setTimeout(function(){catlinks = file3.result.split("\n")},(500))
+		setTimeout(function(){dictru = file4.result.split("\n")},(500))
+		setTimeout(function(){dicteng = file5.result.split("\n")},(500))	
+// 		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
+// 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
+		setTimeout(function(){botstart()},(3000))
+	}
 };
+	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
+
 
 botstart = function(){
+	API.off()
 	state = "running"
-	// get past songs list and stat list in proper format
-	loadsonglist()
-	loadstatlist()
 	API.chatLog("I am K.I.T.T.",true)
 	// Get waitlist at start
 	wlp = API.getWaitList()
@@ -160,6 +224,10 @@ botstart = function(){
 		}
 		if (data.uid === 5433970) {
 			mesrec(data)
+		}
+		if (data.message.split(" ")[0]==="@K.I.T.T." && data.un!="K.I.T.T.") {
+			API.sendChat("@"+data.un+" "+waitchats[Math.floor(Math.random()*waitchats.length)])
+			return
 		}
 		chats++
 	});
@@ -183,11 +251,8 @@ botstart = function(){
 		}												// than woots — skips.
 	});
 	
-	// Calls export commands in 15 minutes to start the open-close loop to make sure
-	// no data is lost due to connection loss or plug maintenance (a bit more info
-	// in the 'chatcommands' function)
-	setTimeout(function(){API.sendChat("/export")},15*60*1000)
-	setTimeout(function(){API.sendChat("/exportstats")},15*60*1000)
+	// Start the loop to save data to local storage every 30 minutes.
+	setTimeout(function(){API.sendChat("/savetolocalstorage")},30*60*1000)
 
 	// schedules the first "left users" cleanup function in an hour (because
 	// it would impossible for someone to be in the list for than 30 minutes 30 minutes 
@@ -202,10 +267,6 @@ botidle = function(){
 	API.on(API.CHAT, function(data){
 		if (data.message==="!botstart" && state==="idle"){
 			if(MasterList.indexOf(data.uid)>-1){
-				API.off(API.CHAT)
-				API.off(API.WAIT_LIST_UPDATE)
-				API.off(API.ADVANCE)
-				API.off(API.SCORE_UPDATE)
 				API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 				botstart()
 			} else{
@@ -306,6 +367,28 @@ function chatcommands(command){
 			delete issuedCommands[key]
 		}
 	};
+	if (command==="/savetolocalstorage"){
+		localStorage.setObject('songlist',songlist)
+		localStorage.setObject('songstats',songstats)
+		localStorage.setObject('asianlinks',asianlinks)
+		localStorage.setObject('roulette',roulette)
+		localStorage.setObject('catlinks',catlinks)
+		localStorage.setObject('issuedcommands',allissuedcommands)
+		localStorage.setObject('addedcommands',[commands,responses,comminput])
+		setTimeout(function(){API.sendChat("/savetolocalstorage")},60*60*1000)
+	};
+	if (command==="/loadfromlocalstorage"){
+		songlist = localStorage.getObject('songlist')
+		songstats = localStorage.getObject('songstatsload')
+		asianlinks = localStorage.getObject('asianlinks')
+		roulette = localStorage.getObject('roulette')
+		catlinks = localStorage.getObject('catlinks')
+	};
+	if (command==="/flushlocalstorage"){
+		for (i=0; i<localstoragekeys.length; i++){
+			delete localStorage[localstoragekeys[i]]
+		}
+	}
 	if (command==="/export"){
 		// exports songlist in the popup window, since writing to local file from within
 		// the javascript is either impossible, or way too hard.
@@ -316,7 +399,6 @@ function chatcommands(command){
 		data = data+"\r\n"+songlist[i].join("+-+")
 		}
 		windowsongs = window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
-		setTimeout(function(){API.sendChat("/closesonglistpopup")},60*60*1000)
 		
 	};
 	if (command==="/closesonglistpopup"){
@@ -331,8 +413,14 @@ function chatcommands(command){
 		data = data+"\r\n"+songstats[i].join("+-+")
 		}
 		windowstats = window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
-		setTimeout(function(){API.sendChat("/closestatlistpopup")},60*60*1000)
+		localStorage.setObject('songstats',songstats.slice(songstats.length-2,songstats.length))
 	};
+	if (command==="/convertsonglist"){
+		for (i=0; i<songlist.length; i++){
+			songlist[i][3]=songlist[i][3].getTime()
+			songlist[i][5]=songlist[i][5].getTime()
+		}
+	}
 	if (command==="/closestatlistpopup"){
 		// same as closesonglistpopup
 		windowstats.close()
@@ -376,6 +464,7 @@ function chatcommands(command){
 			if (commands.indexOf(data[1])<0){
 				commands.push(data[1])
 				responses.push(data.slice(2,data.length).join(" "))
+				localStorage.setObject('addedcommands',[commands,responses,comminput])
 			}
 		}
 	};
@@ -384,6 +473,7 @@ function chatcommands(command){
 		ind = commands.indexOf(data[1])
 		commands.splice(ind,1)
 		responses.splice(ind,1)
+		localStorage.setObject('addedcommands',[commands,responses,comminput])
 	};
 	if (command.split(" ")[0]==="/lastposlist"){
 		for (key in usrlft){
@@ -408,7 +498,7 @@ function botresponses(message){
 	allissuedcommands.push([uname, new Date(), chat_orig])
 	
 	if (uid in IssuedCommands && IssuedCommands[uid][0] === chat) {
-			IssuedCommands[uid][1]++
+		IssuedCommands[uid][1]++
 	} else {
 		IssuedCommands[uid] = [chat,1]
 		clearissued(chat,uid)
@@ -416,11 +506,13 @@ function botresponses(message){
 	
 	if (IssuedCommands[uid][1] === 4) {
 		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you.")
+		return
 	};
 	
 	if (IssuedCommands[uid][1] >= 5) {
 		WORKQUEUE += 1
 		abusemute(uid)
+		return
 	};
 	
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
@@ -451,7 +543,10 @@ function botresponses(message){
 			togglecycle("disable")
 		}
 	}
-	
+	if (chat==="!restart" && MasterList.indexOf(uid)>-1) {
+		API.sendChat("/savetolocalstorage")
+		setTimeout(function(){window.location.href = "https://plug.dj/"},5000)
+	}
 	if (chat==="!meow"){			// send a random link to a cat in chat.
 		if ((!(uname in catusr) || catusr[uname][0]<10)){
 			ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
@@ -561,6 +656,16 @@ function botresponses(message){
 		}
 		return
 	};
+if (chat.split(" ")[0]==="!remove"){
+		if (MasterList.indexOf(message.uid)>-1){
+			API.sendChat("/"+chat_orig.slice(1,chat_orig.length))
+		} else{
+			API.sendChat("@"+uname+" You do not have the security clearance for that action."
+						+" If you try this again, you will be prosecuted to the full extent of the law.")
+			IssuedCommands[uid][1] = 5
+		}
+		return
+	};
 		// returns random number from 0 to 100. Useful for settling arguments.
 	if (chat==="!wowroll"){
 		roll=Math.round(Math.random()*100)
@@ -640,7 +745,7 @@ function botresponses(message){
 		titlelower = song.title.toLowerCase()
 		for (i=0; i<songlist.length; i++){
 			if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)){
-				dt = songlist[i][3]
+				dt = new Date(songlist[i][3])
 				date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
 				API.sendChat(song.author+" — "+song.title+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
 				break
@@ -765,7 +870,7 @@ function mehskip(){
 		djname = API.getDJ().username
 		API.moderateForceSkip()
 		if (Math.random() > 0.6){
-			setTimeout(function(){API.sendChat("@"+djname+" Вы киберунижены.")},250)
+			setTimeout(function(){API.sendChat("@"+djname+" Вы киберунижены.")},500)
 		}
 	}
 };
@@ -786,13 +891,13 @@ function songlistupdate(){
 		if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)) {
 			songlist[i][4]++
 			songlist[i][3] = songlist[i][5] // updates last played date
-			songlist[i][5] = new Date()
+			songlist[i][5] = new Date().getTime()
 			found = true
 			break
 		}
 	}
 	if (!found) {
-		songlist.push([song.cid, song.author, song.title, new Date(), 1, new Date()])
+		songlist.push([song.cid, song.author, song.title, new Date().getTime(), 1, new Date().getTime()])
 	}
 };	
 
@@ -800,6 +905,8 @@ function loadsonglist(){
 	// converts the raw songlist to proper format.
 	for (i=0; i<rawlist.length; i++){
 		songlist.push(rawlist[i].split("+-+"))
+//		songlist[i][3]=parseInt(songlist[i][3])
+//		songlist[i][5]=parseInt(songlist[i][5])
 		songlist[i][3]=new Date(songlist[i][3])
 		songlist[i][5]=new Date(songlist[i][5])
 		songlist[i][4]=parseInt(songlist[i][4])
@@ -943,19 +1050,6 @@ function hangman(chat,type,name){
 	};
 };
 
-function letind(word, lett){
-	// finds all occurrences of a letter in the word and returns its indices
-  var result = [];
-  for(i=0;i<word.length; ++i) {
-    // If you want to search case insensitive use 
-    // if (source.substring(i, i + find.length).toLowerCase() == find) {
-    if (word.substring(i, i + lett.length) == lett) {
-      result.push(i);
-    }
-  }
-  return result;
-}
-
 function catlimit(uname){
 	// once every 24 hours clears the catlimit list
 	delete catusr[uname]
@@ -1053,6 +1147,34 @@ function togglecycle(manual){
 	if (manual === "disable"){
 		$("div.cycle-toggle.button.enabled").click()
 	}
+}
+
+		// STACKOVERFLOW SOLUTIONS
+/*
+Saves and loads object in localStorage. 
+localStorage can only hold strings, so object is stringifed and
+then parsed when needs to be loaded
+*/
+Storage.prototype.setObject = function(key, value) {
+    this.setItem(key, JSON.stringify(value));
+}
+
+Storage.prototype.getObject = function(key) {
+    var value = this.getItem(key);
+    return value && JSON.parse(value);
+}
+
+function letind(word, lett){
+	// finds all occurrences of a letter in the word and returns its indices
+  var result = [];
+  for(i=0;i<word.length; ++i) {
+    // If you want to search case insensitive use 
+    // if (source.substring(i, i + find.length).toLowerCase() == find) {
+    if (word.substring(i, i + lett.length) == lett) {
+      result.push(i);
+    }
+  }
+  return result;
 }
 
 		// NOT IN USE
