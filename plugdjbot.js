@@ -7,11 +7,10 @@
 // ==/UserScript==
 
 
-// Constants
+// Constants and arrays declaration
 var DJJOIN = "yes"			// not in use currently
-							// list of user ids that can fully control the bot
-var MasterList=[4702482, 3737285, 4856012]	// — frederik.torve, Вася Пупкин, dbons
-var usrlft = Object.create(null);			// list of users left while in a queue. associative array 
+var MasterList=[4702482, 3737285, 4856012]	// list of user ids that can fully control the bot
+var usrlft = Object.create(null);			// list of users left while in a queue. Associative array 
 							// with 'key' being username. Holds position and time.
 var wlc = [];	
 var wlcn = [];		// wait list arrays. Previous and new (after wait_list_update
@@ -21,7 +20,7 @@ var wlpn = [];
 var catusr = {};
 var rolusr = {};
 
-var songlist = [];			// "associative list". Actually, no.
+var songlist = [];			
 var songstats = [];
 var songstatsraw = [];
 
@@ -34,7 +33,7 @@ var asianlinks = [];
 var hangmanword = "";
 var hangmanwordg = "";
 
-var chats = 0;						// used to count chat update rate
+var chats = 0;						// is used to count chat update rate
 
 var mode = "normal";
 var state = "";
@@ -48,27 +47,31 @@ var responses = [];
 var comminput = [];
 var defaultcommands = ["!kitt", "!meow", "!bean", "!relay", "!add", "!lastpos", "!lastplayed", 
 						"!asian", "!botjoin", "!botleave", "!botstart", "!botstop", "!mehskip", "!boooring",
-						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll!", "!reroll", "!woworoll"]
+						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll!", "!reroll", "!wowroll"]
 var allissuedcommands = [];
 
 var IssuedCommands = Object.create(null);
 
-var s = "/start";
-
 var prev_chat_uid = 0;
 var this_chat_uid = 0;
-
-var fouls = Object.create(null);
 
 var WORKQUEUE = 0;
 
 var left_message = Object.create(null);
 
+var GREETINGS = ['Sae hae bok mani ba deu se yo!', 'С Новым Годом!', 'Akemashite Omedetou Gozaimasu!', 'Будь аккуратнее с фейерверками!',
+					'Счастья тебе и успехов :3', 'Вот и кончился 2014 год, а ты опять ничего не сделал.', 'Надеюсь, в Новом Году у тебя всё получится!',
+					'У тебя самый вкусный оливье!', 'Поздравляю с наступающим или наступившим!']
+var greeted_list = []
+
+			// местные мемчики
 var TWEEK = ['накрыло немношк', 'часы идут', 'если честно, то трек не очень', 'идите к черту)', 'никак',
 			'да она усратая', 'она сейчас будет дрочит на сцене как всегда?', 'да', 'крис рок', 'нет',
 			'чувствую ваши мысли', 'не пиши таких вещей больше', 'это даже не смешно', 'вы похоже, все ебанутые',
 			'что за чушь вы порите', 'мне плохо стал о', 'я дружу со всеми', 'вы искренне слушали это говно?',
 			'не люблю некрасивых баб', 'я тебе голову взорву', 'почему твоя девушка не парамор?']
+			
+var AUTOTOGGLECYCLE = true
 
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
@@ -76,10 +79,15 @@ function start(){
 	// Also adds the "file input" field in the chat to upload necessary files
 	// As soon as the files have been selected (all at once), automatically sends the 
 	// "/start" command and bot turns on, saying "I am K.I.T.T." in chat log.
-	// for some reason autosend of "/start" is not always working.
 	if (typeof API !== 'undefined' && API.enabled){
 		s = "/start"
-		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(s)"/></div>')
+		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(\'/start\')"/></div>')
+		
+		// turn off audio/video (it's working either way, but this still reduces the workload
+		$("div.info").click()
+		setTimeout(function(){$("div.item.settings").click()},250)
+		setTimeout(function(){$("div.item.s-av.selected").click()},500)
+		setTimeout(function(){$("div.back").click()},750)
 		botinit()
 	} else{
 		setTimeout(function(){
@@ -127,7 +135,7 @@ function startup(command){
 		setTimeout(function(){dicteng = file5.result.split("\n")},(500))	
 		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
-		setTimeout(function(){botstart()},(5000))
+		setTimeout(function(){botstart()},(3000))
 	}
 };
 
@@ -152,11 +160,7 @@ botstart = function(){
 		}
 		if (data.uid === 5433970) {
 			mesrec(data)
-		}// else{
-	//		if (data.message.slice(0,2) ==="@K.I.T.T."){
-	//			botresponses(data)
-	//		}
-	//	}
+		}
 		chats++
 	});
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on)
@@ -164,13 +168,14 @@ botstart = function(){
 	
 	// Check if anyone has left while in a queue
 	API.on(API.WAIT_LIST_UPDATE, waitlistupdate);
+	API.on(API.WAIT_LIST_UPDATE, togglecycle);
 	
 	// On DJ advance check if he is in the usrlft list to prevent !lastpos abuse
 	// Also updates scrobble list and song length stats
 	API.on(API.ADVANCE, lftdjcheck);
 	API.on(API.ADVANCE, songlistupdate);
 	API.on(API.ADVANCE, statisticupdate);
-	API.on(API.ADVANCE, mrazotacheck);
+	API.on(API.ADVANCE, mrazotacheck);	
 	
 	API.on(API.SCORE_UPDATE,function(data){				// compares the votes and calls
 		if (data.negative>=data.positive+5){			// "mehskip" in 5 seconds.
@@ -180,9 +185,14 @@ botstart = function(){
 	
 	// Calls export commands in 15 minutes to start the open-close loop to make sure
 	// no data is lost due to connection loss or plug maintenance (a bit more info
-	// in the 'chatcommands' function
+	// in the 'chatcommands' function)
 	setTimeout(function(){API.sendChat("/export")},15*60*1000)
 	setTimeout(function(){API.sendChat("/exportstats")},15*60*1000)
+
+	// schedules the first "left users" cleanup function in an hour (because
+	// it would impossible for someone to be in the list for than 30 minutes 30 minutes 
+	// after the bot starts.
+	setTimeout(function(){clearleftusers()},(3600*1000))
 };
 
 botidle = function(){
@@ -207,6 +217,7 @@ botidle = function(){
 };	
 
 bothangman = function(language){
+	// Виселица на двух языках. Слова берутся из загруженных при старте текстовых файлов.
 	console.log("Starting Hangman!")
 	API.off(API.CHAT, hangchat)
 	mode = "hangman"
@@ -239,6 +250,7 @@ bothangman = function(language){
 };	
 
 bothangmanconsole = function(language){
+	// То же самое, только не в чат, а в консоль выводится, для тестов было.
 	console.log("Starting Hangman!")
  	API.off(API.CHAT_COMMAND, hangcommands);
 	mode = "hangman"
@@ -270,9 +282,7 @@ bothangmanconsole = function(language){
  	API.on(API.CHAT_COMMAND, hangcommands);
 };
 
-		// can only be used by bot himself. Mostly copies of 'botresponses' with console.log
-		// instead of API.sendChat. Info on those can be found in the respective
-		// "botrespones" commands. Some internal stuff like "/export" song list or 
+		// can only be used by bot himself. Internal stuff like "/export" song list or 
 		// "/flush" roulette/cat limit and dropped users lists.
 function chatcommands(command){
 	if (command==="/kitt"){
@@ -375,13 +385,15 @@ function chatcommands(command){
 		commands.splice(ind,1)
 		responses.splice(ind,1)
 	};
+	if (command.split(" ")[0]==="/lastposlist"){
+		for (key in usrlft){
+			console.log(key+" "+usrlft[key])
+		}
+	};
 };
 
 		// Bot's responses to "!command".
 function botresponses(message){
-	//if (message.message.slice(0,5)=="!word" && message.message.slice(0,7)=="!letter"){	// if that wasn't a hangman
-	//	API.moderateDeleteChat(message.cid)  							// command, then deletes it.
-	//}											// leaves hangman commands so that people know the wrong letters/words.
 
 	if (prev_chat_uid != this_chat_uid) {
 		API.moderateDeleteChat(message.cid)
@@ -403,7 +415,7 @@ function botresponses(message){
 	}
 	
 	if (IssuedCommands[uid][1] === 4) {
-		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you")
+		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you.")
 	};
 	
 	if (IssuedCommands[uid][1] >= 5) {
@@ -414,6 +426,7 @@ function botresponses(message){
 	if (uname==="SomethingNew"){				// If kittex is trying to use the bot, along with
 		setTimeout(function(){API.sendChat("@SomethingNew PSSSSSSSSS")},1500)// an action (if proper command was given) will 	
 	};										// also piss on him.
+
 		
 	if (chat==="!kitt"){
 		if (Math.random()>=0.3){
@@ -423,6 +436,22 @@ function botresponses(message){
 		}
 		return
 	};
+	
+	if (chat.split(" ")[0]==="!cycle" && API.getUser(uid).role >= 2){
+		if (chat.split(" ")[1] === "autoon"){
+			AUTOTOGGLECYCLE = true
+		}	
+		if (chat.split(" ")[1] === "autooff"){
+			AUTOTOGGLECYCLE = false
+		}
+		if (chat.split(" ")[1] === "on"){
+			togglecycle("enable")
+		}
+		if (chat.split(" ")[1] === "off"){
+			togglecycle("disable")
+		}
+	}
+	
 	if (chat==="!meow"){			// send a random link to a cat in chat.
 		if ((!(uname in catusr) || catusr[uname][0]<10)){
 			ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
@@ -438,15 +467,15 @@ function botresponses(message){
 		}
 		return
 	};
-	if (chat.split(" ")[0]==="!bean"){
-		if (chat.length===5){
-			rec = uname
+	if (chat.split(" ")[0]==="!bean"){		// Offers toothpick.
+		if (chat.length===5){				// if nothing is given after the commands, sends the chat to the
+			rec = uname						// person requesting
 		} else {
-			if (chat.split(" ")[1]==="rnd") {
+			if (chat.split(" ")[1]==="rnd") {	// if "rnd" is present, choses a random person in the room
 				users = API.getUsers()
 				rec = users[Math.floor(Math.random()*users.length)].username
 			} else {
-				rec = chat_orig.slice(6,chat.length)
+				rec = chat_orig.slice(6,chat.length)	// otherwise sends the message to a provided recipient.
 			}
 		}
 		API.sendChat("@"+rec+" Зубочистку?")
@@ -559,7 +588,7 @@ function botresponses(message){
 		if (chat.length<9) { 	// if no name after "!lastpos", assumes
 			usname = uname		// the user wants to know about himself
 		} else {
-			if (chat.split(" ")[0] == chat.split(" ")[1]) {
+			if (chat.split(" ")[0] == chat.split(" ")[1]) { 
 				abuseban(uname, uid)
 				return
 			}
@@ -567,8 +596,8 @@ function botresponses(message){
 			usname = chat_orig.slice(9,l)
 			audience = API.getAudience()
 			for (var key in audience) {
-				if (audience[key].username === usname) {
-					uid = audience[key].id
+				if (audience[key].username === usname) { 	// get userID from the provided username
+					uid = audience[key].id   
 					break
 				}
 			}
@@ -605,7 +634,7 @@ function botresponses(message){
 		return
 	};
 	if (chat==="!lastplayed"){
-		// info about current track, how many times it was played and when was the last.
+		// info about current track, how many times it has been played and when was the last.
 		song=API.getMedia()
 		authorlower = song.author.toLowerCase()
 		titlelower = song.title.toLowerCase()
@@ -630,7 +659,7 @@ function botresponses(message){
 		}
 		return
 	};	
-	if (chat.split(" ")[0]==="!add") {
+	if (chat.split(" ")[0]==="!add") {	 	// add custom bot response
 		data = chat_orig.split(" ")
 		data_l = chat.split(" ")
 		if (data.length>=3) {
@@ -697,7 +726,7 @@ function waitlistupdate(object){
 function leftusers() {
 	// Checks if any of the usernames in a previous (before wait_list_update event) wait list
 	// are missing in the current wait list, also checking if that user is not a current dj.
-	// If anyone is missing — writes down his/her username, last position, time and date object
+	// If anyone is missing — writes down their username, last position, time and date object
 	for (i = 0; i < wlpn.length; i++) {
 		if (wlcn.indexOf(wlpn[i])<0 && wlpn[i]!==API.getDJ().username) {
 			date = new Date()
@@ -706,20 +735,18 @@ function leftusers() {
 			usrlft[wlpn[i]] = [i+1, hour, min, date]
 		}
 	}
-		// if there are left users in an array, starts a cleanup function in 30 minutes.
-	if (Object.keys(usrlft).length>0) {		
-		setTimeout(function(){clearleftusers()},(1800*1000))
-	} 
 };
 
 function clearleftusers(){
 	// If the user was present in this array for more than 30 minutes, then remove him
-	date = new Date()				
+	date = new Date()
 	for (key in usrlft) {
-		if ((date-usrlft[key][3])/60000>=30) {	
-			delete usrlft[key]					
+		if ((date-usrlft[key][3])/60000>=30) {
+			delete usrlft[key]
 		}
 	}
+	// repeats the same command in 30 minutes
+	setTimeout(function(){clearleftusers()},(1800*1000))
 };
 
 function lftdjcheck(object){
@@ -751,7 +778,7 @@ function songlistupdate(){
 	// 1 — artist; 2 — title; 3 — last played date; 4 — play count; 5 — current play date.
 	// Two date fiels are required to show the actual last played date, not the one
 	// that is "now", since the list is updated at the beginning of a song.
-	found = "no"
+	found = false
 	song=API.getMedia()
 	authorlower = song.author.toLowerCase()
 	titlelower = song.title.toLowerCase()
@@ -760,12 +787,12 @@ function songlistupdate(){
 			songlist[i][4]++
 			songlist[i][3] = songlist[i][5] // updates last played date
 			songlist[i][5] = new Date()
-			found = "yes"
+			found = true
 			break
 		}
 	}
-	if (found !="yes"){
-			songlist.push([song.cid, song.author, song.title, new Date(), 1, new Date()])
+	if (!found) {
+		songlist.push([song.cid, song.author, song.title, new Date(), 1, new Date()])
 	}
 };	
 
@@ -1009,5 +1036,48 @@ function mesrec(data){
 		left_message[name] = data.cid
 	}
 };
+
+function togglecycle(manual){
+	if (AUTOTOGGLECYCLE){
+		queue = API.getWaitList().length
+		if (queue>11){
+			$("div.cycle-toggle.button.enabled").click()
+		}
+		if (queue<9){
+			$("div.cycle-toggle.button.disabled").click()
+		}
+	}
+	if (manual === "enable"){
+		$("div.cycle-toggle.button.disabled").click()
+	}
+	if (manual === "disable"){
+		$("div.cycle-toggle.button.enabled").click()
+	}
+}
+
+		// NOT IN USE
+function getinline(){
+	var queue = API.getWaitList()
+	var in_line = false
+	for (key in queue){
+		if (queue[key].username === "K.I.T.T."){
+			in_line = true
+		}
+	}
+	if (!in_line){
+		API.moderateAddDJ(5433970)
+	}
+}
+
+function nygreet(user){
+	name = user.username
+	ind = Math.floor(Math.random()*CHR_GREETINGS.length)
+	if (!name in greeted_list){
+		API.sendChat("@"+name+GREETINGS[ind])
+		greeted_list.push(name)
+	}
+}
+		// NOT IN USE
+
 
 start()
