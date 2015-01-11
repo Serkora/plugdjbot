@@ -100,12 +100,15 @@ waitchats = ["K.I.T.T is not at home, please call back later.", "Please, be pati
 			
 var AUTOTOGGLECYCLE = true
 
+var startupnumber = 1
+
 function start(){
 	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
 	// Shamelessly stole that from plugcubed.
 	// Also adds the "file input" field in the chat to upload necessary files
 	// As soon as the files have been selected (all at once), automatically sends the 
 	// "/start" command and bot turns on, saying "I am K.I.T.T." in chat log.
+	console.log("Trying to start up, try number "+startupnumber)
 	if (typeof API !== 'undefined' && API.enabled){
 // 		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(\'/start\')"/></div>')
 		// turn off audio/video (it's working either way, but this still reduces the workload
@@ -115,8 +118,13 @@ function start(){
 		setTimeout(function(){$("div.back").click()},750)
 		botinit()
 	} else{
-		setTimeout(function(){
-			start()},5000)
+		if (startupnumber < 6){
+			setTimeout(function(){
+				startupnumber++
+				start()},5000)
+		} else{
+			window.location.href = "https://plug.dj/dvach"
+		}
 	}
 };
 
@@ -132,6 +140,7 @@ botinit = function(){
 	responses = localStorage.getObject('addedcommands')[1]
 	comminput = localStorage.getObject('addedcommands')[2]
 	botstart()
+// 	API.on(API.CHAT_COMMAND,startup)
 }
 			
 	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
@@ -167,6 +176,8 @@ function startup(command){
 		setTimeout(function(){dicteng = file5.result.split("\n")},(500))	
 		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
+		setTimeout(function(){loadsonglist()},1500)
+		setTimeout(function(){loadstatlist()},2000)
 		setTimeout(function(){botstart()},(3000))
 	}
 	if (command==="/start2"){
@@ -200,6 +211,15 @@ function startup(command){
 // 		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
 // 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
 		setTimeout(function(){botstart()},(3000))
+	}
+	if (command==="/start3"){
+		file1 = new FileReader();
+		var rwlst = document.getElementById('dropfile').files[0];		
+		file1.readAsText(rwlst)
+		API.off(API.CHAT_COMMAND) // turns off chat_command listener to not accept "/start" anymore.
+		setTimeout(function(){rawlist = file1.result.split("\n")},(500))
+		setTimeout(function(){loadsonglist()},1500)
+		setTimeout(function(){botstart()},(5000))
 	}
 };
 	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
@@ -257,7 +277,7 @@ botstart = function(){
 	// schedules the first "left users" cleanup function in an hour (because
 	// it would impossible for someone to be in the list for than 30 minutes 30 minutes 
 	// after the bot starts.
-	setTimeout(function(){clearleftusers()},(3600*1000))
+	setTimeout(function(){clearleftusers()},(60*60*1000))
 };
 
 botidle = function(){
@@ -367,7 +387,8 @@ function chatcommands(command){
 			delete issuedCommands[key]
 		}
 	};
-	if (command==="/savetolocalstorage"){
+	if (command.split(" ")[0]==="/savetolocalstorage"){
+		console.log("SAVING TO LOCAL STORAGE")
 		localStorage.setObject('songlist',songlist)
 		localStorage.setObject('songstats',songstats)
 		localStorage.setObject('asianlinks',asianlinks)
@@ -375,7 +396,10 @@ function chatcommands(command){
 		localStorage.setObject('catlinks',catlinks)
 		localStorage.setObject('issuedcommands',allissuedcommands)
 		localStorage.setObject('addedcommands',[commands,responses,comminput])
-		setTimeout(function(){API.sendChat("/savetolocalstorage")},60*60*1000)
+		if (!command.split(" ")[1]) {
+			console.log("scheduling save")
+			setTimeout(function(){API.sendChat("/savetolocalstorage")},60*60*1000)
+		}
 	};
 	if (command==="/loadfromlocalstorage"){
 		songlist = localStorage.getObject('songlist')
@@ -479,6 +503,17 @@ function chatcommands(command){
 		for (key in usrlft){
 			console.log(key+" "+usrlft[key])
 		}
+	};
+	if (command==="/outputall"){
+		console.log(songlist)
+		console.log(songstats)
+		console.log(roulette)
+		console.log(asianlinks)
+		console.log(catlinks)
+		console.log(commands)
+		console.log(responses)
+		console.log(comminput)
+		console.log(allissuedcommands)
 	};
 };
 
@@ -905,10 +940,8 @@ function loadsonglist(){
 	// converts the raw songlist to proper format.
 	for (i=0; i<rawlist.length; i++){
 		songlist.push(rawlist[i].split("+-+"))
-//		songlist[i][3]=parseInt(songlist[i][3])
-//		songlist[i][5]=parseInt(songlist[i][5])
-		songlist[i][3]=new Date(songlist[i][3])
-		songlist[i][5]=new Date(songlist[i][5])
+		songlist[i][3]=parseInt(songlist[i][3])
+		songlist[i][5]=parseInt(songlist[i][5])
 		songlist[i][4]=parseInt(songlist[i][4])
 	}
 };
