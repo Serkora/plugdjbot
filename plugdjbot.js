@@ -6,6 +6,7 @@
 // @grant		none
 // ==/UserScript==
 
+GLOBAL = this
 
 // Constants and arrays declaration
 var DJJOIN = "yes"			// not in use currently
@@ -20,20 +21,12 @@ var wlpn = [];
 var catusr = {};
 var rolusr = {};
 
-var songlist = [];			
-var songstats = [];
-var songstatsraw = [];
-
-var rawlist = [];
-var dictru = [];
-var dicteng = [];
-var catlinks = [];
-var roulette = [];
-var asianlinks = [];
 var hangmanword = "";
 var hangmanwordg = "";
 
-var chats = 0;						// is used to count chat update rate
+var chatsstat = 0;						// is used to count chat update rate
+var chatsglob1 = 0;
+var chatsglob2 = 0;
 
 var mode = "normal";
 var state = "";
@@ -42,38 +35,45 @@ var hangcount = 0;
 var windowstats = window
 var windowsongs = window
 
+
+// The below arrays are all loaded from localStorage and don't need to be declared here. *raw is not even used anymore.
+// Is only kept here for reference.
+/*
+var songlist = [];			
+var songstats = [];
+var songstatsraw = [];
+var rawlist = [];
+var dictru = [];
+var dicteng = [];
+var catlinks = [];
+var roulette = [];
+var asianlinks = [];
 var commands = [];
 var responses = [];
 var comminput = [];
+var allissuedcommands = [];
+*/
+
 
 var defaultcommands = ["!kitt", "!meow", "!bean", "!relay", "!add", "!lastpos", "!lastplayed", 
 						"!asian", "!botjoin", "!botleave", "!botstart", "!botstop", "!mehskip", "!boooring",
 						"!hangman", "!stopjoin", "!enablejoin", "!clearlists", "!roll", "!reroll", "!wowroll", "!tweek"]
-var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','addedcommands','issuedcommands']
-var allissuedcommands = [];
+						
+// list of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
+var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette']
 
-var IssuedCommands = Object.create(null);
+// Only for reference, the actual 'localstoragekeys' variable is loaded from localStorage.
+// var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','commands','responses','comminput','allissuedcommands',
+// 						'dictru','dicteng','tweek','atresponses'] 
 
-var prev_chat_uid = 0;
-var this_chat_uid = 0;
-
-var WORKQUEUE = 0;
-
-var left_message = Object.create(null);
-
-var GREETINGS = ['Sae hae bok mani ba deu se yo!', 'С Новым Годом!', 'Akemashite Omedetou Gozaimasu!', 'Будь аккуратнее с фейерверками!',
-					'Счастья тебе и успехов :3', 'Вот и кончился 2014 год, а ты опять ничего не сделал.', 'Надеюсь, в Новом Году у тебя всё получится!',
-					'У тебя самый вкусный оливье!', 'Поздравляю с наступающим или наступившим!']
-var greeted_list = []
-
-			// местные мемчики
-var TWEEK = ['накрыло немношк', 'часы идут', 'если честно, то трек не очень', 'идите к черту)', 'никак',
+var tweek = ['накрыло немношк', 'часы идут', 'если честно, то трек не очень', 'идите к черту)', 'никак',
 			'да она усратая', 'она сейчас будет дрочит на сцене как всегда?', 'да', 'крис рок', 'нет',
 			'чувствую ваши мысли', 'не пиши таких вещей больше', 'это даже не смешно', 'вы похоже, все ебанутые',
 			'что за чушь вы порите', 'мне плохо стал о', 'я дружу со всеми', 'вы искренне слушали это говно?',
-			'не люблю некрасивых баб', 'я тебе голову взорву', 'почему твоя девушка не парамор?']
+			'не люблю некрасивых баб', 'я тебе голову взорву', 'почему твоя девушка не парамор?', 'не трогай меня',
+			'я буду твоей иллюзией', 'пакетик ванили','короче, это не интересно', '-_-', 'мне кажется ты ебанутый']
 			
-waitchats = ["K.I.T.T is not at home, please call back later.", "Please, be patient.", "I. Am. Busy.",
+atresponses = ["K.I.T.T is not at home, please call back later.", "Please, be patient.", "I. Am. Busy.",
 				"I need some rest.", "Nah, sorry, can't help you.", "Don't get angry with me, but I'm really tired.",
 				"Nope, still don't want to do anything.", "Oh, sod off!",
 				"Can't you see I'm busy?", "God, will you ever stop bothering me?", "No. Just no.",
@@ -93,32 +93,47 @@ waitchats = ["K.I.T.T is not at home, please call back later.", "Please, be pati
 				"But I know the reason why you keep your silence up.","No you don't fool me. The hurt doesn't show.",
 				"But the pain still grows. It's no stranger to you and me",	"Well if you told me you were drowning, I would not lend a hand.",
 				"I've seen your face before my friend. But I don't know if you know who I am.",
-				"Well, I was tehre and I saw what you did. I saw it with my own two eyes.",
+				"Well, I was there and I saw what you did. I saw it with my own two eyes.",
 				"So you can wipe off that grin, I know where you've been. It's all been a pack of lies",
 				"http://www.ellf.ru/nem/letomer/","http://kurs4today.ru/USD","http://www.youtube.com/watch?v=nzRdxabmX1o",
 				"Зубочистку?","http://www.youtube.com/watch?v=eV_P3knWE9w"]
+
+var IssuedCommands = Object.create(null);
+
+var prev_chat_uid = 0;
+var this_chat_uid = 0;
+
+var WORKQUEUE = 0;
+
+var lost_connection_count = 0;
+
+var left_message = Object.create(null);
+
+var GREETINGS = ['Sae hae bok mani ba deu se yo!', 'С Новым Годом!', 'Akemashite Omedetou Gozaimasu!', 'Будь аккуратнее с фейерверками!',
+					'Счастья тебе и успехов :3', 'Вот и кончился 2014 год, а ты опять ничего не сделал.', 'Надеюсь, в Новом Году у тебя всё получится!',
+					'У тебя самый вкусный оливье!', 'Поздравляю с наступающим или наступившим!']
+var greeted_list = []
 			
 var AUTOTOGGLECYCLE = true
 
 var startupnumber = 1
 
 function start(){
-	// When plug loads — start up the bot. Otherwise calls itself in 5 seconds.
-	// Shamelessly stole that from plugcubed.
-	// Also adds the "file input" field in the chat to upload necessary files
-	// As soon as the files have been selected (all at once), automatically sends the 
-	// "/start" command and bot turns on, saying "I am K.I.T.T." in chat log.
+	/*
+	Tries to start up the bot every 5 seconds after the page has started to load.
+	If no connection within 30 seconds — refreshes the page.
+	On successful connection turns of audio/video by clicking the appropriate buttons
+	and runs the init function.
+	*/
 	console.log("Trying to start up, try number "+startupnumber)
 	if (typeof API !== 'undefined' && API.enabled){
-// 		$('#chat-messages').append('<div><input id="dropfile" type="file" multiple onchange="API.sendChat(\'/start\')"/></div>')
-		// turn off audio/video (it's working either way, but this still reduces the workload
 		$("div.info").click()
 		setTimeout(function(){$("div.item.settings").click()},250)
 		setTimeout(function(){$("div.item.s-av.selected").click()},500)
 		setTimeout(function(){$("div.back").click()},750)
 		botinit()
 	} else{
-		if (startupnumber < 6){
+		if (startupnumber < 6){	
 			setTimeout(function(){
 				startupnumber++
 				start()},5000)
@@ -130,102 +145,40 @@ function start(){
 
 			// bot mode functions: start, idle, hangman, etc. Different actions on events
 botinit = function(){
-	songlist = localStorage.getObject('songlist')
-	songstats = localStorage.getObject('songstats')
-	asianlinks = localStorage.getObject('asianlinks')
-	roulette = localStorage.getObject('roulette')
-	catlinks = localStorage.getObject('catlinks')
-	allissuedcommands = localStorage.getObject('issuedcommands')
-	commands = localStorage.getObject('addedcommands')[0]
-	responses = localStorage.getObject('addedcommands')[1]
-	comminput = localStorage.getObject('addedcommands')[2]
+	/*
+	Loads all required objects from the local storage. The list of objects is also
+	saved in local storage to make it alterable while the bot is running without
+	the need to change code and restart.
+	*/
+	localstoragekeys = localStorage.getObject('localstoragekeys')
+	for (i=0; i<localstoragekeys.length; i++){
+		GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i])
+	}
 	botstart()
-// 	API.on(API.CHAT_COMMAND,startup)
+	// Checks the connection every 5 minutes and reconnects if necessary.
+	setInterval(check_connection,5*60*1000)
+	
+	/*
+	There are two global chat counters and timers. each is reset every 30 minutes to only
+	get the 'current' chat rate.
+	Whenever the chat rate is required, the one with the least time left till reset (i.e. 
+	has more data) is used. Two timers/counters are necessary because of a reset,
+	since otherwise it wouldn't be possible to get an accurate chat rate within a couple of
+	minutes of every reset (which is a lot, considering the reset time of only 30 minutes).
+	*/
+	//chatsglobtime1 = 0 // Make it zero to know if there's not enough data yet
+	//chatsglobtime2 = 0
+	//interval(globalchatrate1,30min);timeout(interval(globalchatrate2,30))
 }
-			
-	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
-function startup(command){
-	// Basically loads all input files with data/links/roulette and formats them properly.
-	if (command==="/start"){
-		file1 = new FileReader();
-		file2 = new FileReader();
-		file3 = new FileReader();		
-		file4 = new FileReader();
-		file5 = new FileReader();
-		file6 = new FileReader();
-		file7 = new FileReader();
-		var rwlst = document.getElementById('dropfile').files[0];		
-		var rlt = document.getElementById('dropfile').files[1];
-		var cats = document.getElementById('dropfile').files[2];
-		var dctru = document.getElementById('dropfile').files[3];
-		var dcteng = document.getElementById('dropfile').files[4];
-		var asians = document.getElementById('dropfile').files[5];
-		var stats = document.getElementById('dropfile').files[6];
-		file1.readAsText(rwlst)
-		file2.readAsText(rlt)
-		file3.readAsText(cats)
-		file4.readAsText(dctru)
-		file5.readAsText(dcteng)
-		file6.readAsText(asians)
-		file7.readAsText(stats)
-		API.off(API.CHAT_COMMAND) // turns off chat_command listener to not accept "/start" anymore.
-		setTimeout(function(){rawlist = file1.result.split("\n")},(500))
-		setTimeout(function(){roulette = file2.result.split("\n")},(500))
-		setTimeout(function(){catlinks = file3.result.split("\n")},(500))
-		setTimeout(function(){dictru = file4.result.split("\n")},(500))
-		setTimeout(function(){dicteng = file5.result.split("\n")},(500))	
-		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
-		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
-		setTimeout(function(){loadsonglist()},1500)
-		setTimeout(function(){loadstatlist()},2000)
-		setTimeout(function(){botstart()},(3000))
-	}
-	if (command==="/start2"){
-// 		file1 = new FileReader();
-// 		file2 = new FileReader();
-// 		file3 = new FileReader();		
-		file4 = new FileReader();
-		file5 = new FileReader();
-// 		file6 = new FileReader();
-// 		file7 = new FileReader();
-// 		var rwlst = document.getElementById('dropfile').files[0];		
-// 		var rlt = document.getElementById('dropfile').files[1];
-// 		var cats = document.getElementById('dropfile').files[2];
-		var dctru = document.getElementById('dropfile').files[0];
-		var dcteng = document.getElementById('dropfile').files[1];
-// 		var asians = document.getElementById('dropfile').files[5];
-// 		var stats = document.getElementById('dropfile').files[6];
-// 		file1.readAsText(rwlst)
-// 		file2.readAsText(rlt)
-// 		file3.readAsText(cats)
-		file4.readAsText(dctru)
-		file5.readAsText(dcteng)
-// 		file6.readAsText(asians)
-// 		file7.readAsText(stats)
-		API.off(API.CHAT_COMMAND) // turns off chat_command listener to not accept "/start" anymore.
-// 		setTimeout(function(){rawlist = file1.result.split("\n")},(500))
-// 		setTimeout(function(){roulette = file2.result.split("\n")},(500))
-// 		setTimeout(function(){catlinks = file3.result.split("\n")},(500))
-		setTimeout(function(){dictru = file4.result.split("\n")},(500))
-		setTimeout(function(){dicteng = file5.result.split("\n")},(500))	
-// 		setTimeout(function(){asianlinks = file6.result.split("\n")},(500))	
-// 		setTimeout(function(){songstatsraw = file7.result.split("\n")},(500))	
-		setTimeout(function(){botstart()},(3000))
-	}
-	if (command==="/start3"){
-		file1 = new FileReader();
-		var rwlst = document.getElementById('dropfile').files[0];		
-		file1.readAsText(rwlst)
-		API.off(API.CHAT_COMMAND) // turns off chat_command listener to not accept "/start" anymore.
-		setTimeout(function(){rawlist = file1.result.split("\n")},(500))
-		setTimeout(function(){loadsonglist()},1500)
-		setTimeout(function(){botstart()},(5000))
-	}
-};
-	// NOT IN USE! Needs to be changed to just be an "additional files load", such as hangman dictionary etc
-
 
 botstart = function(){
+
+	// Log the startup times.
+	var t = new Date()
+	var times = localStorage.getObject('startuptimes') || []
+	times.push(t)
+	localStorage.setObject('startuptimes',times)
+	
 	API.off()
 	state = "running"
 	API.chatLog("I am K.I.T.T.",true)
@@ -246,37 +199,43 @@ botstart = function(){
 			mesrec(data)
 		}
 		if (data.message.split(" ")[0]==="@K.I.T.T." && data.un!="K.I.T.T.") {
-			API.sendChat("@"+data.un+" "+waitchats[Math.floor(Math.random()*waitchats.length)])
+			API.sendChat("@"+data.un+" "+atresponses[Math.floor(Math.random()*atresponses.length)])
 			return
 		}
-		chats++
+		chatsstat++ 	// increment chats count to calculate chat rate for song stats
+		chatsglob1++	// increment chats count to calculate global chat rate
+		chatsglob2++	// increment chats count to calculate global chat rate
 	});
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on)
 	API.on(API.CHAT_COMMAND, chatcommands);
 	
-	// Check if anyone has left while in a queue
+	// Check if anyone has left while in a queue. 
+	// Counts the number of people in queue and toggles DJ cycles if needed
 	API.on(API.WAIT_LIST_UPDATE, waitlistupdate);
 	API.on(API.WAIT_LIST_UPDATE, togglecycle);
 	
 	// On DJ advance check if he is in the usrlft list to prevent !lastpos abuse
-	// Also updates scrobble list and song length stats
+	// Also updates scrobble list, song length stats and
+	// checks if the song is absurdly long while people are in queue
 	API.on(API.ADVANCE, lftdjcheck);
 	API.on(API.ADVANCE, songlistupdate);
 	API.on(API.ADVANCE, statisticupdate);
 	API.on(API.ADVANCE, mrazotacheck);	
 	
-	API.on(API.SCORE_UPDATE,function(data){				// compares the votes and calls
-		if (data.negative>=data.positive+5){			// "mehskip" in 5 seconds.
-			setTimeout(function(){mehskip()},(5000))	// if there are still 5+ more mehs
-		}												// than woots — skips.
+	// Compares the votes and calls "mehskip" in 5 seconds.
+	// If there are still 5+ more mehs than woots — skips.
+	API.on(API.SCORE_UPDATE,function(data){
+		if (data.negative>=data.positive+5){
+			setTimeout(function(){mehskip()},(5000))
+		}
 	});
-	
-	// Start the loop to save data to local storage every 30 minutes.
-	setTimeout(function(){API.sendChat("/savetolocalstorage")},30*60*1000)
 
-	// schedules the first "left users" cleanup function in an hour (because
-	// it would impossible for someone to be in the list for than 30 minutes 30 minutes 
-	// after the bot starts.
+	// Start the loop to save data to local storage every 5 minutes.
+	setTimeout(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
+
+	// Schedules the first "left users" cleanup function in an hour (because
+	// it would impossible for someone to be in the list for more than 30 minutes only 
+	// 30 minutes after the bot starts.
 	setTimeout(function(){clearleftusers()},(60*60*1000))
 };
 
@@ -312,6 +271,7 @@ bothangman = function(language){
 			hangmanwordg = hangmanwordg.substr(0,ind*2)+"-"+hangmanwordg.substr(ind*2+1)
 		}
 		lng="Russian"
+		
 	}
 	if (language==="eng"){
 		ind=Math.floor(Math.random()*dicteng.length)
@@ -366,17 +326,26 @@ bothangmanconsole = function(language){
 		// can only be used by bot himself. Internal stuff like "/export" song list or 
 		// "/flush" roulette/cat limit and dropped users lists.
 function chatcommands(command){
-	if (command==="/kitt"){
+	console.log(command)
+	command = command.split(" ")
+	if (command[0]==="/transfertowindow"){
+		window['BOTSCOPE'] = GLOBAL
+	}
+	if (command[0]==="/transferfromwindow"){
+		var varname = command[1]
+		GLOBAL[varname] = window[varname]
+	}
+	if (command[0]==="/connected"){
+		lost_connection_count = 0
+	}
+	if (command[0]==="/kitt"){
 		if (Math.random()>=0.3){
 			console.log("Yes, Michael?")
 		} else{
 			console.log("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 		}
 	};
-	if (command==="/flush"){
-		for (key in usrlft){
-			delete usrlft[key]
-		}
+	if (command[0]==="/flushlimits"){
 		for (key in rolusr){
 			delete rolusr[key]
 		}
@@ -384,142 +353,159 @@ function chatcommands(command){
 			delete catusr[key]
 		}
 		for (key in IssuedCommands){
-			delete issuedCommands[key]
+			delete IssuedCommands[key]
 		}
 	};
-	if (command.split(" ")[0]==="/savetolocalstorage"){
+	if (command[0]==="/expandvar"){
+		var varname = command[1]
+		var text = command.slice(2).join(" ")
+		GLOBAL[varname].push(text)
+	}
+	if (command[0]==="/addvar"){
+		localstoragekeys.push(command[1])
+		API.sendChat("/savetolocalstorage force noschedule")
+	}
+	if (command[0]==="/addfile"){
+		window['savecom'] = "/addtostorage "+command[1]
+		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(savecom)"/></div>')
+	}
+	if (command[0]==="/addtostorage"){
+		var varname = command[1]
+		var file = new FileReader();
+		file.onload = function(){
+			varvalue = file.result.split("\n");
+			if (localstoragekeys.indexOf(varname)<0) {
+				localstoragekeys.push(varname)
+			}
+			GLOBAL[varname]=varvalue
+			$('#dropfile').remove()
+			API.sendChat("/savetolocalstorage force noschedule")
+		}
+		var fileval = document.getElementById('dropfile').files[0];		
+		file.readAsText(fileval)
+	};
+	if (command[0]==="/savetolocalstorage"){
 		console.log("SAVING TO LOCAL STORAGE")
-		localStorage.setObject('songlist',songlist)
-		localStorage.setObject('songstats',songstats)
-		localStorage.setObject('asianlinks',asianlinks)
-		localStorage.setObject('roulette',roulette)
-		localStorage.setObject('catlinks',catlinks)
-		localStorage.setObject('issuedcommands',allissuedcommands)
-		localStorage.setObject('addedcommands',[commands,responses,comminput])
-		if (!command.split(" ")[1]) {
+		localStorage.setObject('localstoragekeys',localstoragekeys)
+		for (i=0; i<localstoragekeys.length; i++){
+			if (!(command.indexOf("force") > -1) && immutablestoragekeys.indexOf(localstoragekeys[i]) > -1) {continue}
+			console.log(localstoragekeys[i])
+			localStorage.setObject(localstoragekeys[i],GLOBAL[localstoragekeys[i]])
+		}
+		if (!(command.indexOf("noschedule") > -1)) {
 			console.log("scheduling save")
-			setTimeout(function(){API.sendChat("/savetolocalstorage")},60*60*1000)
+			setTimeout(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
 		}
 	};
-	if (command==="/loadfromlocalstorage"){
-		songlist = localStorage.getObject('songlist')
-		songstats = localStorage.getObject('songstatsload')
-		asianlinks = localStorage.getObject('asianlinks')
-		roulette = localStorage.getObject('roulette')
-		catlinks = localStorage.getObject('catlinks')
+	if (command[0]==="/loadfromlocalstorage"){
+		localstoragekeys = localStorage.getObject('localstoragekeys')
+		for (i=0; i<localstoragekeys.length; i++){
+			GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i])
+		}
 	};
-	if (command==="/flushlocalstorage"){
+	if (command[0]==="/flushlocalstorage"){
 		for (i=0; i<localstoragekeys.length; i++){
 			delete localStorage[localstoragekeys[i]]
 		}
 	}
-	if (command==="/export"){
+	if (command[0]==="/exportsongs"){
 		// exports songlist in the popup window, since writing to local file from within
 		// the javascript is either impossible, or way too hard.
-		// Calls the close popup function in 60 minutes. Calls via chat command
-		// to make sure the plug/internet connection has not gone down.
 		data = songlist[0].join("+-+")
 		for (i=1; i<songlist.length; i++){
-		data = data+"\r\n"+songlist[i].join("+-+")
+			data = data+"\r\n"+songlist[i].join("+-+")
 		}
 		windowsongs = window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 		
 	};
-	if (command==="/closesonglistpopup"){
-		// closes the popup and opens the new one, updated
-		windowsongs.close()
-		API.sendChat("/export")
-	};
-	if (command==="/exportstats"){
+	if (command[0]==="/exportstats"){
 		// same as songlist
 		data = songstats[0].join("+-+")
 		for (i=1; i<songstats.length; i++){
-		data = data+"\r\n"+songstats[i].join("+-+")
+			data = data+"\r\n"+songstats[i].join("+-+")
 		}
 		windowstats = window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 		localStorage.setObject('songstats',songstats.slice(songstats.length-2,songstats.length))
 	};
-	if (command==="/convertsonglist"){
-		for (i=0; i<songlist.length; i++){
-			songlist[i][3]=songlist[i][3].getTime()
-			songlist[i][5]=songlist[i][5].getTime()
+	if (command[0]==="/export"){
+		var varname = command[1]
+		if (GLOBAL[varname]){
+			var data = GLOBAL[varname]
+		} else {return}
+		if (data[0] instanceof Array){
+			expdata = data[0].join(" ")
+			for (i=1; i<data.length; i++){
+				expdata = expdata+"\r\n"+data[i].join(" ")
+			}
+		} else{
+			expdata = data.reduce(function(a,b){return a+"\r\n"+b})
 		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))			
 	}
-	if (command==="/closestatlistpopup"){
-		// same as closesonglistpopup
-		windowstats.close()
-		API.sendChat("/exportstats")
-	};
-	if (command==="/addtosonglist"){
+	if (command[0]==="/addtosonglist"){
 		// manually add the song to song list. 
 		songlistupdate()
 	};
-	if (command==="/addtostats"){
+	if (command[0]==="/addtostats"){
 		// manually add data to stat list.
 		statisticupdate()
 	};
-	if (command==="/hangmanru"){
+	if (command[0]==="/hangmanru"){
 		// start console version of hangman. Single player games have always been the best, right?
 		bothangmanconsole("ru")
 	};
-	if (command==="/hangmaneng"){
+	if (command[0]==="/hangmaneng"){
 		bothangmanconsole("eng")
 	};
-	if (command==="/issuedcommands") {
+	if (command[0]==="/issuedcommands") {
 		console.log(IssuedCommands)
 	};
-	if (command==="/exportcomms") {
+	if (command[0]==="/exportcomms") {
 		data = comminput[0].join(" - ")
 		for (i=1; i<comminput.length; i++){
 			data = data+"\r\n"+comminput[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 	}
-	if (command==="/exportallcomms") {
+	if (command[0]==="/exportallcomms") {
 		data = allissuedcommands[0].join(" - ")
 		for (i=1; i<allissuedcommands.length; i++){
 			data = data+"\r\n"+allissuedcommands[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 	}
-	if (command.split(" ")[0]==="/add"){
-		data = command.split(" ")
+	if (command[0]==="/add"){
 		if (data.length>=3) {
-			if (commands.indexOf(data[1])<0){
-				commands.push(data[1])
-				responses.push(data.slice(2,data.length).join(" "))
+			if (commands.indexOf(command[1])<0){
+				commands.push(command[1])
+				responses.push(command.slice(2,command.length).join(" "))
 				localStorage.setObject('addedcommands',[commands,responses,comminput])
 			}
 		}
 	};
-	if (command.split(" ")[0]==="/remove"){
-		data = command.split(" ")
-		ind = commands.indexOf(data[1])
+	if (command[0]==="/remove"){
+		ind = commands.indexOf(command[1])
 		commands.splice(ind,1)
 		responses.splice(ind,1)
-		localStorage.setObject('addedcommands',[commands,responses,comminput])
+		localStorage.setObject('commands',commands)
+		localStorage.setObject('comminput',comminput)
+		localStorage.setObject('responses',responses)
 	};
-	if (command.split(" ")[0]==="/lastposlist"){
+	if (command[0]==="/lastposlist"){
 		for (key in usrlft){
 			console.log(key+" "+usrlft[key])
 		}
 	};
-	if (command==="/outputall"){
-		console.log(songlist)
-		console.log(songstats)
-		console.log(roulette)
-		console.log(asianlinks)
-		console.log(catlinks)
-		console.log(commands)
-		console.log(responses)
-		console.log(comminput)
-		console.log(allissuedcommands)
+	if (command[0]==="/outputall"){
+		for (i=0; i<localstoragekeys.length; i++){
+			console.log(localstoragekeys[i])
+			console.log(GLOBAL[localstoragekeys[i]])
+		}
 	};
 };
 
 		// Bot's responses to "!command".
 function botresponses(message){
-
 	if (prev_chat_uid != this_chat_uid) {
 		API.moderateDeleteChat(message.cid)
 		this_chat_uid = 0
@@ -564,7 +550,7 @@ function botresponses(message){
 		return
 	};
 	
-	if (chat.split(" ")[0]==="!cycle" && API.getUser(uid).role >= 2){
+	if (chat.split(" ")[0]==="!cycle" && API.getUser(uid).role >= 3){
 		if (chat.split(" ")[1] === "autoon"){
 			AUTOTOGGLECYCLE = true
 		}	
@@ -580,7 +566,7 @@ function botresponses(message){
 	}
 	if (chat==="!restart" && MasterList.indexOf(uid)>-1) {
 		API.sendChat("/savetolocalstorage")
-		setTimeout(function(){window.location.href = "https://plug.dj/"},5000)
+		setTimeout(function(){window.location.href = "https://plug.dj/"},3000)
 	}
 	if (chat==="!meow"){			// send a random link to a cat in chat.
 		if ((!(uname in catusr) || catusr[uname][0]<10)){
@@ -691,7 +677,7 @@ function botresponses(message){
 		}
 		return
 	};
-if (chat.split(" ")[0]==="!remove"){
+	if (chat.split(" ")[0]==="!remove"){
 		if (MasterList.indexOf(message.uid)>-1){
 			API.sendChat("/"+chat_orig.slice(1,chat_orig.length))
 		} else{
@@ -755,7 +741,7 @@ if (chat.split(" ")[0]==="!remove"){
 	};
 	if (chat==="!flush"){
 		if (MasterList.indexOf(message.uid)>-1){
-			API.sendChat("/flush")
+			API.sendChat("/flushlimits")
 		} else{
 			API.sendChat("@"+uname+" You do not have the security clearance for that action."
 						+" If you try this again, you will be prosecuted to the full extent of the law.")
@@ -839,8 +825,8 @@ if (chat.split(" ")[0]==="!remove"){
 		return
 	};
 	if (chat.split(" ")[0]==="!tweek"){
-		ind = Math.floor(Math.random()*TWEEK.length)	
-		API.sendChat(TWEEK[ind])
+		ind = Math.floor(Math.random()*tweek.length)	
+		API.sendChat(tweek[ind])
 		return
 	};
 	if (commands.indexOf(chat)>-1){
@@ -956,16 +942,18 @@ function loadstatlist(){
 };
 
 function statisticupdate(){
-	// Update stats list. Saves the duration of the song, wait list length,
-	// time of day and chat update rate. After sufficient data have been collected,
-	// some sort of linear prediciton algorithm will be made up to tell how long,
-	// approximately, the user has to wait until it's his turn to dj.
+	/*
+	Update stats list. Saves the duration of the song, wait list length,
+	time of day and chat update rate. After sufficient data have been collected,
+	some sort of linear prediciton algorithm will be made up to tell how long,
+	approximately, the user has to wait until it's his turn to dj.
+	*/
 	dur = API.getMedia().duration
 	queue = API.getWaitList().length
 	time = new Date()
-	freq = chats/((time - songstats[songstats.length-1][2])/60000)
+	freq = chatsstat/((time - songstats[songstats.length-1][2])/60000)
 	songstats.push([dur,queue,time,freq])
-	chats = 0
+	chatsstat = 0
 };
 
 function hangchat(data){
@@ -978,7 +966,7 @@ function hangchat(data){
 	if (msg.slice(0,5)==="!word"){
 		hangman(msg.slice(6,msg.length).toLowerCase(),"word",uname)
 	};
-	if (msg==="!hangmanstop" && data.uid in MasterList){
+	if (msg==="!hangstop" && MasterList.indexOf(data.uid)>-1){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
@@ -1179,6 +1167,19 @@ function togglecycle(manual){
 	}
 	if (manual === "disable"){
 		$("div.cycle-toggle.button.enabled").click()
+	}
+}
+
+function check_connection(){
+	/*
+	Every n minutes increments connection counter and send the reset command. If bot is not 
+	properly connected (can't send/receive chat), the counter won't be reset and after
+	reaching a limit the page will refresh.
+	*/
+	lost_connection_count++
+	API.sendChat("/connected")
+	if (lost_connection_count>2){
+		window.location.href = "https://plug.dj/dvach"
 	}
 }
 
