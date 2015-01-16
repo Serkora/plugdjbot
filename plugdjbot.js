@@ -230,13 +230,11 @@ botstart = function(){
 		}
 	});
 
-	// Start the loop to save data to local storage every 5 minutes.
-	setTimeout(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
+	// Save data to local storage every 5 minutes.
+	setInterval(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
 
-	// Schedules the first "left users" cleanup function in an hour (because
-	// it would impossible for someone to be in the list for more than 30 minutes only 
-	// 30 minutes after the bot starts.
-	setTimeout(function(){clearleftusers()},(60*60*1000))
+	// Schedules 'left users' cleanup to be called every 30 minutes
+	setInterval(clearleftusers,(30*60*1000))
 };
 
 botidle = function(){
@@ -257,7 +255,6 @@ botidle = function(){
 };	
 
 bothangman = function(language){
-	// Виселица на двух языках. Слова берутся из загруженных при старте текстовых файлов.
 	console.log("Starting Hangman!")
 	API.off(API.CHAT, hangchat)
 	mode = "hangman"
@@ -291,7 +288,6 @@ bothangman = function(language){
 };	
 
 bothangmanconsole = function(language){
-	// То же самое, только не в чат, а в консоль выводится, для тестов было.
 	console.log("Starting Hangman!")
  	API.off(API.CHAT_COMMAND, hangcommands);
 	mode = "hangman"
@@ -385,17 +381,14 @@ function chatcommands(command){
 		file.readAsText(fileval)
 	};
 	if (command[0]==="/savetolocalstorage"){
-		console.log("SAVING TO LOCAL STORAGE")
 		localStorage.setObject('localstoragekeys',localstoragekeys)
 		for (i=0; i<localstoragekeys.length; i++){
 			if (!(command.indexOf("force") > -1) && immutablestoragekeys.indexOf(localstoragekeys[i]) > -1) {continue}
-			console.log(localstoragekeys[i])
 			localStorage.setObject(localstoragekeys[i],GLOBAL[localstoragekeys[i]])
 		}
-		if (!(command.indexOf("noschedule") > -1)) {
-			console.log("scheduling save")
-			setTimeout(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
-		}
+// 		if (!(command.indexOf("noschedule") > -1)) {
+// 			setTimeout(function(){API.sendChat("/savetolocalstorage")},5*60*1000)
+// 		}
 	};
 	if (command[0]==="/loadfromlocalstorage"){
 		localstoragekeys = localStorage.getObject('localstoragekeys')
@@ -790,7 +783,7 @@ function botresponses(message){
 		data_l = chat.split(" ")
 		if (data.length>=3) {
 			comminput.push([uname,chat_orig])
-			if (data[2][0] === "!" || data[2][0] === "/" || defaultcommands.indexOf(data[1]) > -1) {
+			if (data[2][0] === "!" || (data[2][0] === "/" && data[2] != "/me") || defaultcommands.indexOf(data[1]) > -1) {
 				WORKQUEUE +=1
 				abuseban(uname, uid)
 			} else {
@@ -817,7 +810,7 @@ function botresponses(message){
 		} else{
 			msg = data.slice(1,data.length).join(" ")
 		}
-		if (msg.indexOf("!") === 0 || msg.indexOf("/") === 0) {
+		if (msg.indexOf("!") === 0 || (msg.indexOf("/") === 0 && msg.indexOf("/me") != 0)) {
 			abusemute(uname, uid)
 		} else{
 			API.sendChat(msg)
@@ -844,15 +837,16 @@ function waitlistupdate(object){
 	}
 	if (wlpn.length>wlcn.length){		// function to see if anyone was dropped from plug
 		leftusers()						// while in a queue. Initiated only if the queue
-										// reduced in length.
-	}
+	}									// reduced in length.
 	wlpn = wlcn	
 };				
 
 function leftusers() {
-	// Checks if any of the usernames in a previous (before wait_list_update event) wait list
-	// are missing in the current wait list, also checking if that user is not a current dj.
-	// If anyone is missing — writes down their username, last position, time and date object
+	/* 
+	Checks if any of the usernames in a previous (before wait_list_update event) wait list
+	are missing in the current wait list, also checking if that user is not a current dj.
+	If anyone is missing — writes down their username, last position, time and date object
+	*/
 	for (i = 0; i < wlpn.length; i++) {
 		if (wlcn.indexOf(wlpn[i])<0 && wlpn[i]!==API.getDJ().username) {
 			date = new Date()
@@ -864,15 +858,13 @@ function leftusers() {
 };
 
 function clearleftusers(){
-	// If the user was present in this array for more than 30 minutes, then remove him
+	/* If the user was present in this array for more than 30 minutes, then remove him. */
 	date = new Date()
 	for (key in usrlft) {
 		if ((date-usrlft[key][3])/60000>=30) {
 			delete usrlft[key]
 		}
 	}
-	// repeats the same command in 30 minutes
-	setTimeout(function(){clearleftusers()},(1800*1000))
 };
 
 function lftdjcheck(object){
@@ -897,22 +889,28 @@ function mehskip(){
 };
 
 function songlistupdate(){
-	// Updates the scrobble list. If either the youtube video id or both artist and song title
-	// match the one already present in the list — increments the play count.
-	// Otherwise simply appends it to the list.
-	// 0 — video id (not really sure what is there for soundcloud songs)
-	// 1 — artist; 2 — title; 3 — last played date; 4 — play count; 5 — current play date.
-	// Two date fiels are required to show the actual last played date, not the one
-	// that is "now", since the list is updated at the beginning of a song.
-	found = false
-	song=API.getMedia()
-	authorlower = song.author.toLowerCase()
-	titlelower = song.title.toLowerCase()
+	/* 
+	Updates the scrobble list. If either the youtube video id or both artist and song title
+	match the one already present in the list — increments the play count and saves the date.
+	Otherwise simply appends it to the list.
+	0 — video id (not really sure what is there for soundcloud songs)
+	1 — artist; 2 — title; 3 — last played date; 4 — play count; 5 — current play date.
+	Two date fiels are required to show the actual last played date, not the one
+	that is "now", since the list is updated at the beginning of a song.
+	*/
+	var found = false
+	var song=API.getMedia()
+	var authorlower = song.author.toLowerCase()
+	var titlelower = song.title.toLowerCase()
 	for (i=0; i<songlist.length; i++){
+		if (compareSongInList(songlist[i],song)){
+			console.log(songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower))
+		}
 		if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)) {
+			console.log(compareSongInList(songlist[i],song))
 			songlist[i][4]++
 			songlist[i][3] = songlist[i][5] // updates last played date
-			songlist[i][5] = new Date().getTime()
+			songlist[i][5] = new Date().getTime() // stores the current play date
 			found = true
 			break
 		}
@@ -920,26 +918,16 @@ function songlistupdate(){
 	if (!found) {
 		songlist.push([song.cid, song.author, song.title, new Date().getTime(), 1, new Date().getTime()])
 	}
-};	
-
-function loadsonglist(){
-	// converts the raw songlist to proper format.
-	for (i=0; i<rawlist.length; i++){
-		songlist.push(rawlist[i].split("+-+"))
-		songlist[i][3]=parseInt(songlist[i][3])
-		songlist[i][5]=parseInt(songlist[i][5])
-		songlist[i][4]=parseInt(songlist[i][4])
-	}
 };
 
-function loadstatlist(){
-	// converts the raw stats to proper format (no need for now, really, 
-	// but makes sure the file is not corrupted in some way).
-	for (i=0; i<songstatsraw.length; i++){
-		songstats.push(songstatsraw[i].split("+-+"))
-		songstats[i][2]=new Date(songstats[i][2])
+function compareSongInList(songinlist, songplaying){
+	var authorlower = songplaying.author.toLowerCase()
+	var titlelower = songplaying.title.toLowerCase()
+	if (songinlist[0]===songplaying.cid || (songinlist[1].toLowerCase()===authorlower && songinlist[2].toLowerCase()===titlelower)){
+		return true
 	}
-};
+	return false
+}	
 
 function statisticupdate(){
 	/*
@@ -957,7 +945,7 @@ function statisticupdate(){
 };
 
 function hangchat(data){
-	// catches hangman chats
+	/* Handles hangman-related chats. */
 	msg = data.message
 	uname = data.un
 	if (msg.slice(0,7)==="!letter"){
@@ -1024,7 +1012,7 @@ function hangcommands(command){
 };
 
 function hangman(chat,type,name){
-	// checks the word or letter, case-independent. Gives 10 tries to guess the word.
+	/* Checks the word or letter, case-independent. Gives 10 tries to guess the word. */
 	wrd = hangmanword
 	wrdg = hangmanwordg
 	indc = []
@@ -1072,21 +1060,23 @@ function hangman(chat,type,name){
 };
 
 function catlimit(uname){
-	// once every 24 hours clears the catlimit list
+	/* once every 24 hours clears the catlimit list. */
 	delete catusr[uname]
 }
 
 function addandmove(uid,place){
+	/* Move the person in waitlist. */
 	if (WORKQUEUE > 1) {
 		setTimeout(function(){addandmove(uid,place)},1000)
 	} else{
-		setTimeout(function(){API.moderateAddDJ(String(uid))},500)							// adds user to the queue
+		setTimeout(function(){API.moderateAddDJ(String(uid))},500)	// adds user to the queue
 		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
 		WORKQUEUE -= 1
 	}
 };
 
 function addandmove_deletechat(name,position,uid){
+	/* Checks if the person has been moved to the required position. If not — tries to move him again. */
 	queue = API.getWaitList()
 	moved = false
 	for (i=0; i<queue.length; i++) {
@@ -1103,6 +1093,7 @@ function addandmove_deletechat(name,position,uid){
 };
 
 function abusemute(uid){
+	/* Mute for 15 minutes. Removes from staff, mutes, returns back to staff, because only greys can be muted. */
 	if (WORKQUEUE > 1){
 		setTimeout(function(){abusemute(uid)},1000)
 	} else{
@@ -1116,6 +1107,7 @@ function abusemute(uid){
 };
 
 function abuseban(uname, uid){
+	/* Ban the person for 1 hour. WORKQUEUE is a temporary solution to force serial execution of function. */
 	if (WORKQUEUE > 1){
 		setTimeout(function(){abuseban(uname,uid)},1000)
 	} else{
@@ -1126,6 +1118,7 @@ function abuseban(uname, uid){
 };
 
 function clearissued(chat,uid){
+	/* Clears IssuedCommands array. */
 	setTimeout(function(){
 		if (IssuedCommands[uid][0] === chat) {
 			delete IssuedCommands[uid]
@@ -1134,6 +1127,7 @@ function clearissued(chat,uid){
 };
 
 function mrazotacheck(){
+	/* If the track is way too long while people are in queue — skips it. */
 	dur = API.getMedia().duration
 	queue = API.getWaitList().length
 	if (dur >= 9000 && queue > 1) {
@@ -1142,6 +1136,8 @@ function mrazotacheck(){
 };	
 
 function mesrec(data){
+	/* Tracks messages from bot and acts if needed. Currently only "!lastpos" messages
+	are deleted if moved successfully or person was not in list (after a short delay). */
 	if (data.message.indexOf("not in the list") > -1) {
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
 	}
@@ -1153,6 +1149,8 @@ function mesrec(data){
 };
 
 function togglecycle(manual){
+	/* Turns DJ cycle on or off depending of wait list length. Called after every WAIT_LIST_UPDATE event. 
+	"manual" argument is passed when called	from "botresponses" function. */
 	if (AUTOTOGGLECYCLE){
 		queue = API.getWaitList().length
 		if (queue>11){
@@ -1172,7 +1170,7 @@ function togglecycle(manual){
 
 function check_connection(){
 	/*
-	Every n minutes increments connection counter and send the reset command. If bot is not 
+	Every n minutes increments connection counter and sends the reset command. If bot is not 
 	properly connected (can't send/receive chat), the counter won't be reset and after
 	reaching a limit the page will refresh.
 	*/
@@ -1212,6 +1210,25 @@ function letind(word, lett){
 }
 
 		// NOT IN USE
+function loadsonglist(){
+	// converts the raw songlist to proper format.
+	for (i=0; i<rawlist.length; i++){
+		songlist.push(rawlist[i].split("+-+"))
+		songlist[i][3]=parseInt(songlist[i][3])
+		songlist[i][5]=parseInt(songlist[i][5])
+		songlist[i][4]=parseInt(songlist[i][4])
+	}
+};
+
+function loadstatlist(){
+	// converts the raw stats to proper format (no need for now, really, 
+	// but makes sure the file is not corrupted in some way).
+	for (i=0; i<songstatsraw.length; i++){
+		songstats.push(songstatsraw[i].split("+-+"))
+		songstats[i][2]=new Date(songstats[i][2])
+	}
+};
+
 function getinline(){
 	var queue = API.getWaitList()
 	var in_line = false
