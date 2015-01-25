@@ -1251,34 +1251,6 @@ function catlimit(uname){
 	delete catusr[uname]
 }
 
-function addandmove(uid,place){
-	/* Move the person in waitlist. */
-	if (WORKQUEUE > 1) {
-		setTimeout(function(){addandmove(uid,place)},1000)
-	} else{
-		setTimeout(function(){API.moderateAddDJ(String(uid))},500)	// adds user to the queue
-		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
-		WORKQUEUE -= 1
-	}
-};
-
-function addandmove_deletechat(name,position,uid){
-	/* Checks if the person has been moved to the required position. If not — tries to move him again. */
-	queue = API.getWaitList()
-	moved = false
-	for (i=0; i<queue.length; i++) {
-		if (queue[i].username == name && (i+1) <= position) {
-			API.moderateDeleteChat(left_message[name])
-			moved = true
-			break
-		}
-	}
-	if (!moved) {
-		WORKQUEUE += 1
-		addandmove(uid,position)
-	}
-};
-
 function abusemute(uid){
 	/* Mute for 15 minutes. Removes from staff, mutes, returns back to staff, because only greys can be muted. */
 	if (WORKQUEUE > 1){
@@ -1340,7 +1312,7 @@ function toggleCycle(manual){
 	/* Turns DJ cycle on or off depending on wait list length. Called after every WAIT_LIST_UPDATE event. 
 	"manual" argument is passed when called	from chat function. "button.on" and "button.off" seem to be 
 	in the wrong places, but that's plug.dj we are talking about, you can't honestly expect them to do
-	anything properly. Or maybe I'm just missing the point of calling the buttons the other way around.*/
+	everything properly. Or maybe I'm just missing the point of calling the buttons the other way around.*/
 	if (AUTOTOGGLECYCLE){
 		var queue = API.getWaitList().length
 		if (queue>11 && DJCYCLE!=false){
@@ -1377,7 +1349,6 @@ function clearTimeouts(type){
 		timeouts.cycle = null
 	}
 	if (!!timeouts.skip && type==="skip") {
-		console.log("clearing mehskip")
 		clearTimeout(timeouts.skip)
 		timeouts.skip = null
 	}
@@ -1614,9 +1585,9 @@ function findInQueue(uid){
 function getChatRate(type){
 	/* Allows to get chat rate from one of the two counters. Either the one that was
 	reset most recently (checkConnection function uses it to catch connection failure sooner),
-	or the one that was collection chats for at least 15 minutes. At any point in time one of them
+	or the one that was collecting chats for at least 15 minutes. At any point in time one of them
 	has number of chats from the last 15-30 minutes, and the other from the last 0-15 minutes.
-	Nice XOR allows to have only one if/else to do check the required one.
+	Nice XOR allows to have only one if/else to get the required one.
 	*/
 	if ((Date.now()-chatsglob[0][0]>15*60*1000)^type==="short"){
 		var chatrate = chatsglob[0][1]/(Date.now()-chatsglob[0][0])
@@ -1663,7 +1634,7 @@ function letind(word, letter){
   return result;
 }
 
-			// NOT IN USE
+			// NOT IN USE OR DEPRECATED
 function loadsonglist(){
 	// converts the raw songlist to proper format.
 	for (i=0; i<rawlist.length; i++){
@@ -1704,7 +1675,35 @@ function nygreet(user){
 		greeted_list.push(name)
 	}
 }
-			// NOT IN USE
+
+function addandmove(uid,place){
+	/* Move the person in waitlist. */
+	if (WORKQUEUE > 1) {
+		setTimeout(function(){addandmove(uid,place)},1000)
+	} else{
+		setTimeout(function(){API.moderateAddDJ(String(uid))},500)	// adds user to the queue
+		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
+		WORKQUEUE -= 1
+	}
+};
+
+function addandmove_deletechat(name,position,uid){
+	/* Checks if the person has been moved to the required position. If not — tries to move him again. */
+	queue = API.getWaitList()
+	moved = false
+	for (i=0; i<queue.length; i++) {
+		if (queue[i].username == name && (i+1) <= position) {
+			API.moderateDeleteChat(left_message[name])
+			moved = true
+			break
+		}
+	}
+	if (!moved) {
+		WORKQUEUE += 1
+		addandmove(uid,position)
+	}
+};
+			// NOT IN USE OR DEPRECATED
 
 
 start()
