@@ -139,12 +139,13 @@ var roulette = [];
 var asianlinks = [];
 var user_responses = [];
 var user_comminput = [];
-var BUGREPORTS = []
 var user_commands = [];
 var songlist = [];			
 var songstats = [];
-*/
 var allissuedcommands = [];
+var BUGREPORTS = [];
+*/
+
 
 function start(){
 	/*
@@ -155,10 +156,10 @@ function start(){
 	*/
 	console.log("Trying to start up, try number "+startupnumber)
 	if (typeof API !== 'undefined' && API.enabled){
-// 		$("div.info").click()
-// 		setTimeout(function(){$("div.item.settings").click()},250)
-// 		setTimeout(function(){$("div.item.s-av.selected").click()},500)
-// 		setTimeout(function(){$("div.back").click()},750)
+		$("div.info").click()
+		setTimeout(function(){$("div.item.settings").click()},250)
+		setTimeout(function(){$("div.item.s-av.selected").click()},500)
+		setTimeout(function(){$("div.back").click()},750)
 		botInit()
 		createEye()
 	} else{
@@ -181,7 +182,7 @@ botInit = function(){
 	*/
 	localstoragekeys = localStorage.getObject('localstoragekeys')
 	for (i=0; i<localstoragekeys.length; i++){
-		GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i])
+		GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i]) || []
 	}
 	botStart()
 	// Checks the connection every ~5 minutes and reconnects if necessary.
@@ -244,8 +245,8 @@ botStart = function(){
 	Updates scrobble list, song length stats, checks if the song is absurdly long while 
 	people are in a queue and adds tweek if she's not in the list. */
 	API.on(API.ADVANCE, checkDJ);
-// 	API.on(API.ADVANCE, songlistUpdate);
-// 	API.on(API.ADVANCE, statisticUpdate);
+	API.on(API.ADVANCE, songlistUpdate);
+	API.on(API.ADVANCE, statisticUpdate);
 	API.on(API.ADVANCE, mrazotaCheck);
 	API.on(API.ADVANCE, sameArtist);
 	API.on(API.ADVANCE, addTweek);	
@@ -625,7 +626,6 @@ function chatClassifier(message){
 		return
 	}
 	if (user_commands.indexOf(message.message)>-1 && SETTINGS.fun){
-		console.log("here")
 		API.sendChat(user_responses[user_commands.indexOf(COMMAND_SYMBOL+chat)])
 		return
 	};
@@ -1181,6 +1181,7 @@ function songlistUpdate(){
 
 function checkDJ(object){
 	/* removes current dj from left users and rolled users lists, if present */
+	if (!('dj' in object)){return}
 	if (object.dj.username in dropped_users_list) {
 		delete dropped_users_list[object.dj.username]
 	}
