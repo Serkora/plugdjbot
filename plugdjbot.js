@@ -963,7 +963,7 @@ function chatFun(uname,chat,chat_orig,uid) {
 				var users = API.getUsers()
 				var rec = users[Math.floor(Math.random()*users.length)].username
 			} else {
-				var rec = chat_orig.slice(6,chat.length)	// otherwise sends the message to a given recipient.
+				var rec = chat_orig.split(" ").slice(1).join(" ")	// otherwise sends the message to a given recipient.
 			}
 		}
 		API.sendChat("@"+rec+" Зубочистку?")
@@ -1248,11 +1248,11 @@ function sameArtist(){
 	var played = 0
 	for (var i=0; i<songlist.length; i++){
 		if (songlist[i][1]===artist){
-			if (songlist[i][4]>1 && (time - songlist[i][3])<4*60*60*1000 && (time - songlist[i][5])<4*60*60*1000){
+			if (songlist[i][4]>1 && (time - songlist[i][3])<3*60*60*1000 && (time - songlist[i][5])<3*60*60*1000){
 				API.sendChat("@"+dj+", That song has been played very recently. Please, be more diverse in your music choice.")
 				return
 			}
-			if ((time - songlist[i][5])<4*60*60*1000){
+			if ((time - songlist[i][5])<3*60*60*1000){
  				played++
 			} 
 			if (played===2){
