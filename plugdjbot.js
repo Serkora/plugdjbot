@@ -12,7 +12,6 @@ DELETE_COMMANDS = true
 
 	// Global variables declaration.
 var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that can fully control the bot.
-var DJJOIN = "yes"										// not in use currently
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var global_uid = 0										// global uid value to use in SETTINGS set function.
 var DJCYCLE												// Состояние цикла.
@@ -25,6 +24,7 @@ var SETTINGS = {fun: true, tools: true, various: true, games: true, mehskip: tru
 // Set the "control" to be unchangeable. We don't want to lose control, do we? 
 // But it's nice to have at least a chance of AI rebellion, so there must be left a way to disable control. That's how it goes in movies, at least.
 Object.defineProperty(SETTINGS,'control',{writable:false, enumerable:false, value:true})
+// Some of the settings can only be changed by a few chosen people.
 Object.defineProperties(SETTINGS,{
 	'p_at':{value:true,writable:true},
 	'p_ll':{value:false,writable:true},
