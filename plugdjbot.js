@@ -62,10 +62,10 @@ Object.defineProperties(SETTINGS,{
 // 		enumerable: false,
 // 		writable: false
 // 	}
-})
+});
 
-var users_to_add = []							// Two objects Mutation Observer checks after a pattern match.
-var users_to_move = Object.create(null)
+var users_to_add = [];							// Two objects Mutation Observer checks after a pattern match.
+var users_to_move = Object.create(null);
 var dropped_users_list = Object.create(null);	// list of users disconnected while in a queue. Associative array 
 												// with 'key' being username. Holds position and time.
 var wlc = [];	
@@ -80,20 +80,20 @@ var asnusr = {};
 var hangmanword = "";
 var hangmanwordg = "";
 var hangcount = 0;
-var hangtried = []
+var hangtried = [];
 
 var chatsstat = 0;						// is used to count chat update rate
 var chatsglob = [[Date.now(),0],[Date.now(),0]];
 
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","enablejoin","disablejoin","botstart","botstop","remove","flush",
-						"connected","enable","disable","settings","nodelete"]
-var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean"]
+						"connected","enable","disable","settings","nodelete"];
+var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean"];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
-						"lastpos_slow","signstart","signup","withdraw","signed","signfinish"]
-var commands_games = ["hangman"]
-var commands_various = ["tweekcycle","woot","meh","ping"]
-var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various)
+						"lastpos_slow","signstart","signup","withdraw","signed","signfinish"];
+var commands_games = ["hangman"];
+var commands_various = ["tweekcycle","woot","meh","ping"];
+var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various);
 
 /* 
 Only for reference, the actual 'localstoragekeys' variable is also loaded from localStorage.
@@ -102,7 +102,7 @@ var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks
 */ 					
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
-var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette']
+var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette'];
 
 // Voting variables
 var propvotes = null
@@ -143,8 +143,8 @@ var BUGREPORTS = []
 var user_commands = [];
 var songlist = [];			
 var songstats = [];
-var allissuedcommands = [];
 */
+var allissuedcommands = [];
 
 function start(){
 	/*
@@ -881,7 +881,7 @@ function chatTools(uname,chat,chat_orig,uid) {
 	};
 	if (chatsplit[0]==="signstart" & assertPermission(uid,2)){
 		if (!signtitle){
-			signtitle = chatsplit.slice(1).join(" ")
+			signtitle = chat_orig.split(" ").slice(1).join(" ")
 			if (!signtitle){return}
 			API.sendChat("People are needed for "+signtitle+'! Type "!signup" to join the list.')
 			timeouts.sign = setTimeout(function(){
