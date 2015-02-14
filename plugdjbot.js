@@ -92,10 +92,10 @@ var chatsglob = [[Date.now(),0],[Date.now(),0]];
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
 						"connected","enable","disable","settings","nodelete","updatepatrons"];
-var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean"];
+var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce "];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
 						"lastpos_slow","signstart","signup","withdraw","signed","signfinish",
-						"leaveafter","lastseen","postcount"];
+						"leaveafter","lastseen","postсount"];
 var commands_games = ["hangman","russian"];
 var commands_various = ["tweekcycle","woot","meh","ping","kitt"];
 var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various);
@@ -404,11 +404,11 @@ function chatCommands(command){
 	var command = command.split(" ")
 	if (command[0]==="/transfertowindow"){
 		window['BOTSCOPE'] = GLOBAL
-	}
+	};
 	if (command[0]==="/transferfromwindow"){
 		var varname = command[1]
 		GLOBAL[varname] = window[varname]
-	}
+	};
 	if (command[0]==="/kitt"){
 		if (Math.random()>=0.3){
 			console.log("Yes, Michael?")
@@ -431,15 +431,15 @@ function chatCommands(command){
 		var varname = command[1]
 		var text = command.slice(2).join(" ")
 		GLOBAL[varname].push(text)
-	}
+	};
 	if (command[0]==="/addvar"){
 		localstoragekeys.push(command[1])
 		chatCommands("/savetolocalstorage force")
-	}
+	};
 	if (command[0]==="/addfile"){
 		window['savecom'] = "/addtostorage "+command[1]
 		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(savecom)"/></div>')
-	}
+	};
 	if (command[0]==="/addtostorage"){
 		var varname = command[1]
 		var file = new FileReader();
@@ -508,7 +508,7 @@ function chatCommands(command){
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
 		return
-	}
+	};
 	if (command[0]==="/addtosonglist"){
 		// manually add the song to song list. 
 		songlistUpdate()
@@ -533,14 +533,14 @@ function chatCommands(command){
 			data = data+"\r\n"+comminput[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
-	}
+	};
 	if (command[0]==="/exportallcomms") {
 		var data = allissuedcommands[0].join(" - ")
 		for (i=1; i<allissuedcommands.length; i++){
 			data = data+"\r\n"+allissuedcommands[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
-	}
+	};
 	if (command[0]==="/add"){
 		if (command.length>=3) {
 			if (user_commands.indexOf(command[1])<0){
@@ -576,7 +576,7 @@ function chatCommands(command){
 		}
 		var expdata = JSON.stringify(DATA)
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
-	}
+	};
 	if (command[0]==="/importall"){
 		if (command[1]==="load"){
 		var file = new FileReader();
@@ -595,22 +595,21 @@ function chatCommands(command){
 		}
 		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(\'/importall load\')"/></div>')
 		
-	}
-	if (command[0]==="/updatepatrons"){
-		updatePatrons()
-	}
+	};
 	if (command[0]==="/restart"){
 		botRestart()
-	}
-	if (command[0]==="/fixpatrons"){
-		
-	}
+	};
+	if (command[0]==="/updatepatrons"){
+		updatePatrons()
+	};
 	if (command[0]==="modifypatron"){
 		var prop = command[1]
 		var value = command[2]
 		var name = command.slice(3).join(" ")
 		modifyPatron(name,prop,value)
-	}
+	};
+	if (command[0]==="/fixpatrons"){	
+	};
 };
 
 			// USER CHAT
@@ -986,7 +985,7 @@ function chatTools(uname,chat,chat_orig,uid) {
 		var lastseen = PATRONS[uid].lastseen
 		API.sendChat(name+" was last seen on "+ new Date(lastseen))
 	}
-	if (chat==="postcount"){
+	if (chat==="postсount"){
 		API.sendChat("@"+uname+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
 	}
 };
@@ -1109,6 +1108,14 @@ function chatFun(uname,chat,chat_orig,uid) {
 		var ind = Math.floor((tweek.length+chatsplit[1]-1)%tweek.length) || Math.floor(Math.random()*tweek.length)	
 		API.sendChat(tweek[ind])
 		return
+	};
+	if (chat==="triforce"){
+		API.sendChat("▲")
+		setTimeout(function(){API.sendChat("▲  ▲")},200)
+	};
+	if (chat==="triforce "){
+		API.sendChat("   ▲")
+		setTimeout(function(){API.sendChat("▲  ▲")},200)
 	};
 };	
 
@@ -1413,14 +1420,14 @@ function removeFromList(){
 			delete users_to_remove[key]
 		}
 	}
-}
+};
 
 function tagPlayed(){
 	var user = API.getDJ().username
 	if (users_to_remove[user]){
 		users_to_remove[user][1]=true
 	}
-}
+};
 
 			// SCHEDULED FUNCTIONS
 
@@ -1766,14 +1773,14 @@ function getUID(name){
 		}
 	}
 	return uid
-}
+};
 
 function getName(uid){
 	var users = API.getUsers()
 	var name
 	users.forEach(function(elem){if (elem.id===uid){name = elem.username}})
 	return name
-}
+};
 
 function getChatRate(type){
 	/* 
@@ -2075,7 +2082,6 @@ function russianRoulette(chat,uid,uname){
 };
 
 			// Classes
-			
 function Patron(id){
 	this.id = id
 	this.name = null
@@ -2154,7 +2160,7 @@ function getinline(){
 	if (!in_line){
 		API.moderateAddDJ(5433970)
 	}
-}
+};
 
 function nygreet(user){
 	name = user.username
@@ -2163,7 +2169,7 @@ function nygreet(user){
 		API.sendChat("@"+name+GREETINGS[ind])
 		greeted_list.push(name)
 	}
-}
+};
 
 var left_message = Object.create(null); // DEPRECATED
 function addandmove(uid,place){
