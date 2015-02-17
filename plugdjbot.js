@@ -30,7 +30,7 @@ var SETTINGS = {fun: true, tools: true, various: true, games: true, mehskip: tru
 Object.defineProperty(SETTINGS,'control',{writable:false, enumerable:false, value:true})
 // Some of the settings can only be changed by a few chosen people.
 Object.defineProperties(SETTINGS,{
-	'p_at':{value:true,writable:true},
+	'p_at':{value:false,writable:true},
 	'p_ll':{value:false,writable:true},
 	'addtweek': {
 		enumerable: true,
@@ -60,6 +60,11 @@ Object.defineProperties(SETTINGS,{
 			}
 		},
 		get: function(){return SETTINGS.p_ll}
+	},
+	'disabled':{
+		enumerable: false,
+		writable: true,
+		value: []
 	}
 // 	'control': {
 // 		value: true,
@@ -92,7 +97,7 @@ var chatsglob = [[Date.now(),0],[Date.now(),0]];
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
 						"connected","enable","disable","settings","nodelete","updatepatrons"];
-var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce "];
+var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ","valentine"];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
 						"lastpos_slow","signstart","signup","withdraw","signed","signfinish",
 						"leaveafter","lastseen","postсount"];
@@ -107,7 +112,7 @@ var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks
 */ 					
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
-var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette'];
+var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette','user_responses','user_comminput','user_commands'];
 
 // Voting variables
 var propvotes = null
@@ -139,6 +144,8 @@ var WORKQUEUE = 0;
 var lost_connection_count = 0;
 
 var startupnumber = 1
+
+var VALENTINES = Object.create(null)
 
 // The below arrays are all loaded from localStorage and don't need to be declared here. *raw is not even used anymore.
 // Are only kept here for reference.
@@ -186,7 +193,7 @@ function start(){
 	}
 };
 
-			// bot mode functions: start, idle, hangman, etc. Different actions on events
+			// BOT MODE FUNCTION
 botInit = function(){
 	/*
 	Loads all required objects from the local storage. The list of objects is also
@@ -194,11 +201,12 @@ botInit = function(){
 	the need to change code and restart.
 	*/
 	localstoragekeys = localStorage.getObject('localstoragekeys') || []
-	if (localstoragekeys.length===0){API.chatLog("DELTED AGAIN. ARRRGH",true)}
+	if (localstoragekeys.length===0){API.chatLog("DELETED AGAIN. ARRRGH",true)}
 	for (i=0; i<localstoragekeys.length; i++){
 		GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i]) || 
 					GLOBAL[localstoragekeys[i]] || API.chatLog("Couldn't load "+localstoragekeys[i],true)
 	}
+	SETTINGS.disabled = localStorage.getObject("settingsdisabled")
 	botStart()
 	// Checks the connection every 5 minutes and reconnects if necessary.
 	setInterval(checkConnection,5*60*1000)
@@ -214,6 +222,10 @@ botStart = function(){
 	
 	API.off() // Turns of all listeners (that may remain after botIdle, for example)
 	state = "running"
+	enableSetting(4702482,"all")
+	for (var i=0; i<SETTINGS.disabled.length; i++){
+		disableSetting(4702482,SETTINGS.disabled[i])
+	}
 
 	// Get waitlist at start
 	wlp = API.getWaitList()
@@ -404,10 +416,12 @@ function chatCommands(command){
 	var command = command.split(" ")
 	if (command[0]==="/transfertowindow"){
 		window['BOTSCOPE'] = GLOBAL
+		return
 	};
 	if (command[0]==="/transferfromwindow"){
 		var varname = command[1]
 		GLOBAL[varname] = window[varname]
+		return
 	};
 	if (command[0]==="/kitt"){
 		if (Math.random()>=0.3){
@@ -415,6 +429,7 @@ function chatCommands(command){
 		} else{
 			console.log("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 		}
+		return
 	};
 	if (command[0]==="/flushlimits"){
 		for (key in rolusr){
@@ -426,19 +441,28 @@ function chatCommands(command){
 		for (key in issuedcommands){
 			delete issuedcommands[key]
 		}
+		return
 	};
 	if (command[0]==="/expandvar"){
 		var varname = command[1]
 		var text = command.slice(2).join(" ")
 		GLOBAL[varname].push(text)
+		return
 	};
 	if (command[0]==="/addvar"){
 		localstoragekeys.push(command[1])
 		chatCommands("/savetolocalstorage force")
+		return
+	};
+	if (command[0]==="/remvar"){
+		localstoragekeys.splice(localstoragekeys.indexOf(command[1]),1)
+		chatCommands("/savetolocalstorage force")
+		return
 	};
 	if (command[0]==="/addfile"){
 		window['savecom'] = "/addtostorage "+command[1]
 		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(savecom)"/></div>')
+		return
 	};
 	if (command[0]==="/addtostorage"){
 		var varname = command[1]
@@ -454,6 +478,7 @@ function chatCommands(command){
 		}
 		var fileval = document.getElementById('dropfile').files[0];		
 		file.readAsText(fileval)
+		return
 	};
 	if (command[0]==="/savetolocalstorage"){
 		localStorage.setObject('localstoragekeys',localstoragekeys)
@@ -461,17 +486,21 @@ function chatCommands(command){
 			if (!(command.indexOf("force") > -1) && immutablestoragekeys.indexOf(localstoragekeys[i]) > -1) {continue}
 			localStorage.setObject(localstoragekeys[i],GLOBAL[localstoragekeys[i]])
 		}
+		localStorage.setObject('settingsdisabled',SETTINGS.disabled)
+		return
 	};
 	if (command[0]==="/loadfromlocalstorage"){
 		localstoragekeys = localStorage.getObject('localstoragekeys')
 		for (i=0; i<localstoragekeys.length; i++){
 			GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i])
 		}
+		return
 	};
 	if (command[0]==="/flushlocalstorage"){
 		for (i=0; i<localstoragekeys.length; i++){
 			delete localStorage[localstoragekeys[i]]
 		}
+		return
 	}
 	if (command[0]==="/exportsongs"){
 		// exports songlist in the popup window, since writing to local file from within
@@ -481,7 +510,7 @@ function chatCommands(command){
 			data = data+"\r\n"+songlist[i].join("+-+")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
-		
+		return
 	};
 	if (command[0]==="/exportstats"){
 		// same as songlist
@@ -491,6 +520,7 @@ function chatCommands(command){
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
 // 		localStorage.setObject('songstats',songstats.slice(songstats.length-2,songstats.length)) // clears stats
+		return
 	};
 	if (command[0]==="/export"){
 		var varname = command[1]
@@ -512,20 +542,25 @@ function chatCommands(command){
 	if (command[0]==="/addtosonglist"){
 		// manually add the song to song list. 
 		songlistUpdate()
+		return
 	};
 	if (command[0]==="/addtostats"){
 		// manually add data to stat list.
 		statisticUpdate()
+		return
 	};
 	if (command[0]==="/hangmanru"){
 		// start console version of hangman. Single player games have always been the best, right?
 		bothangmanconsole("ru")
+		return
 	};
 	if (command[0]==="/hangmaneng"){
 		bothangmanconsole("eng")
+		return
 	};
 	if (command[0]==="/issuedcommands") {
 		console.log(issuedcommands)
+		return
 	};
 	if (command[0]==="/exportcomms") {
 		var data = comminput[0].join(" - ")
@@ -533,6 +568,7 @@ function chatCommands(command){
 			data = data+"\r\n"+comminput[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+		return
 	};
 	if (command[0]==="/exportallcomms") {
 		var data = allissuedcommands[0].join(" - ")
@@ -540,34 +576,41 @@ function chatCommands(command){
 			data = data+"\r\n"+allissuedcommands[i].join(" - ")
 		}
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+		return
 	};
 	if (command[0]==="/add"){
 		if (command.length>=3) {
 			if (user_commands.indexOf(command[1])<0){
 				user_commands.push(command[1])
 				user_responses.push(command.slice(2,command.length).join(" "))
-				localStorage.setObject('addedcommands',[user_commands,user_responses,user_comminput])
+				localStorage.setObject('user_commands',user_commands)
+				localStorage.setObject('user_comminput',user_comminput)
+				localStorage.setObject('user_responses',user_responses)
 			}
 		}
+		return
 	};
 	if (command[0]==="/remove"){
 		var ind = user_commands.indexOf(command[1])
 		user_commands.splice(ind,1)
 		user_responses.splice(ind,1)
-		localStorage.setObject('commands',user_commands)
-		localStorage.setObject('comminput',user_comminput)
-		localStorage.setObject('responses',user_responses)
+		localStorage.setObject('user_commands',user_commands)
+		localStorage.setObject('user_comminput',user_comminput)
+		localStorage.setObject('user_responses',user_responses)
+		return
 	};
 	if (command[0]==="/lastposlist"){
 		for (key in dropped_users_list){
 			console.log(key+" "+dropped_users_list[key])
 		}
+		return
 	};
 	if (command[0]==="/outputall"){
 		for (i=0; i<localstoragekeys.length; i++){
 			console.log(localstoragekeys[i])
 			console.log(GLOBAL[localstoragekeys[i]])
 		}
+		return
 	};
 	if (command[0]==="/exportall"){
 		DATA['localstoragekeys'] = localstoragekeys
@@ -576,6 +619,7 @@ function chatCommands(command){
 		}
 		var expdata = JSON.stringify(DATA)
 		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
+		return
 	};
 	if (command[0]==="/importall"){
 		if (command[1]==="load"){
@@ -594,21 +638,25 @@ function chatCommands(command){
 			return
 		}
 		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(\'/importall load\')"/></div>')
-		
+		return
 	};
 	if (command[0]==="/restart"){
 		botRestart()
+		return
 	};
 	if (command[0]==="/updatepatrons"){
 		updatePatrons()
+		return
 	};
-	if (command[0]==="modifypatron"){
+	if (command[0]==="/modifypatron"){
 		var prop = command[1]
 		var value = command[2]
 		var name = command.slice(3).join(" ")
 		modifyPatron(name,prop,value)
+		return
 	};
-	if (command[0]==="/fixpatrons"){	
+	if (command[0]==="/fixpatrons"){
+	return
 	};
 };
 
@@ -641,16 +689,16 @@ function chatClassifier(message){
 		PATRONS[uid].samecommand++
 	} else {
 		PATRONS[uid].lastcommand = chat.split(" ")[0]
+		PATRONS[uid].samecommand = 0
 		clearIssued(chat,uid)
 	}
 	
-	if (PATRONS[uid].samecommands === 5) {
+	if (PATRONS[uid].samecommand === 4) {
 		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you.")
 		return
 	};
-	if (PATRONS[uid].samecommands >= 6) {
-		WORKQUEUE += 1
-		abusemute(uid)
+	if (PATRONS[uid].samecommand >= 5) {
+		userMute("",1,uid)
 		return
 	};
 	
@@ -696,6 +744,7 @@ function chatControl(uname,chat,chat_orig,uid) {
 	if (chat==="connected"){
 		// reset the 'lost connection' counter.
 		lost_connection_count = 0
+		return
 	}
 	if (chatsplit[0]==="enable" && assertPermission(uid,3)){
 		global_uid = uid
@@ -706,13 +755,21 @@ function chatControl(uname,chat,chat_orig,uid) {
 		}
 		if (SETTINGS[setting]===false){		// if it is currently off, to make sure no new settings are added (although that would be useless)
 			SETTINGS[setting]=true
+			if (SETTINGS.disabled.indexOf(setting)>-1){
+				SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(setting),1)
+			}
 			clearTimeouts(setting)
 		}
+		return
 	}
 	if (chatsplit[0]==="disable" && assertPermission(uid,3)){
 		global_uid = uid
 		var setting = chat_orig.split(" ")[1]
 		var delay = Number(chat_orig.split(" ")[2]) || 120
+		if (chatsplit[2] === "never"){
+			SETTINGS.disabled.push(chatsplit[1])
+			localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		}
 		if (setting==="all"){
 			disableSetting(uid,"all")
 			return
@@ -724,6 +781,7 @@ function chatControl(uname,chat,chat_orig,uid) {
 				timeouts[setting] = setTimeout(function(){global_uid = uid; SETTINGS[setting]=true},(delay)*60*1000)
 			}
 		}
+		return
 	}
 	if (chat==="settings" && assertPermission(uid,3)){
 		var chat = ""
@@ -733,9 +791,11 @@ function chatControl(uname,chat,chat_orig,uid) {
 		}
 		chat = chat.slice(0,-2)+"."
 		API.sendChat(chat)
+		return
 	}
 	if (chat==="nodelete" && assertPermission(uid,0)){
 		DELETE_COMMANDS = DELETE_COMMANDS^true
+		return
 	}
 	if (chatsplit[0]==="cycle" && assertPermission(uid,3)){
 		/* DJ cycle. Turn automatic toggle on or off. After being switched off, reenables itself in 1.5 hours. */
@@ -754,14 +814,18 @@ function chatControl(uname,chat,chat_orig,uid) {
 		if (chat.split(" ")[1] === "off"){
 			toggleCycle("disable")
 		}
+		return
 	}
 	if (chat==="restart" && assertPermission(uid,3)) {
 		botRestart()
+		return
 	}
 	if (chat==="locklist"){
 		/* May be used to prevent residentDJs/bouncers from entering the queue 
 		at the event of sorts, since "wait list lock" does not affect them, but 
 		they don't always behave well. Simply removes anyone that joins the list.*/
+		API.sendChat("/me airstrike alarm")
+		setTimeout(function(){API.sendChat("Waitlist is in lockdown.")},200)
 		global_uid = uid
 		SETTINGS.locklist=true
 		reallyLockWaitList()
@@ -772,35 +836,21 @@ function chatControl(uname,chat,chat_orig,uid) {
 		SETTINGS.locklist=false
 		return
 	};
-	if (chat==="botstop"){
+	if (chat==="botstop" && assertPermission(uid,3) && state==="running"){
 		/* Stops the bot, removes chatClassifier listener and starts the one that waits for "!botstart" command only. */
-		if (assertPermission(uid,3) && state==="running"){
-			state = "idle"
-			API.sendChat('I only have about 30 seconds of voice transmission left.')
- 			setTimeout(function(){botIdle()},30*1000)
-		}
+		state = "idle"
+		API.sendChat('I only have about 30 seconds of voice transmission left.')
+		setTimeout(function(){botIdle()},30*1000)
 		return
 	};
-	if (chatsplit[0]==="remove"){
+	if (chatsplit[0]==="remove" && assertPermission(uid,4)){
 		/* Removes the specified user-created command. The removal itself happens in the internal "chatCommands" function. */
-		if (assertPermission(uid,0)){
-			chatCommands("/"+chat_orig)
-		} else{
-			API.sendChat("@"+uname+" You do not have the security clearance for that action."
-						+" If you try this again, you will be prosecuted to the full extent of the law.")
-			issuedcommands[uid][1] = 5
-		}
+		chatCommands("/"+chat_orig)
 		return
 	};
-	if (chat==="flush"){
+	if (chat==="flush" && assertPermission(uid,0)) {
 		/* Reset limit lists. As in the above, reset happens in the internal "chatCommands" function. */
-		if (assertPermission(uid,0)){
-			chatCommands("/flushlimits")
-		} else{
-			API.sendChat("@"+uname+" You do not have the security clearance for that action."
-						+" If you try this again, you will be prosecuted to the full extent of the law.")
-			issuedcommands[uid][1] = 5
-		}
+		chatCommands("/flushlimits")
 		return
 	};
 };
@@ -934,6 +984,7 @@ function chatTools(uname,chat,chat_orig,uid) {
 	if (chatsplit[0]==="bugreport"){
 		/* A simple way to leave a message after the tone. */
 		bugreports.push(chat.split(" ").slice(1).join(" "))
+		return
 	};
 	if (chatsplit[0]==="signstart" & assertPermission(uid,2)){
 		if (!signtitle){
@@ -947,14 +998,17 @@ function chatTools(uname,chat,chat_orig,uid) {
 		} else {
 				API.sendChat("You have to finish the previous enlistment first")
 		}
+		return
 	};
 	if (chat==="signup"){
 		if (!(uid in signedusers)){
 			signedusers[uid]=uname
 		}
+		return
 	};
 	if (chat==="withdraw"){
 		delete signedusers[uid]
+		return
 	};
 	if (chat==="signed"){
 		function chatTimeout(i){
@@ -967,27 +1021,36 @@ function chatTools(uname,chat,chat_orig,uid) {
 		for (var i=0; i<=signed.length/15; i++){
 			chatTimeout(i)
 		}
+		return
 	};
 	if (chat==="signfinish" && assertPermission(uid,2)){
 		chatTools('','signed','signed',uid)
 		signtitle = null
 		signedusers = Object.create(null)
 		clearTimeouts("sign")
+		return
 	};
 	if (chat==="leaveafter"){
 		var curdj = false
 		if (API.getDJ().id===uid){curdj = true}
 		users_to_remove[uname]=[uid,curdj]
+		return
 	};
 	if (chatsplit[0]==="lastseen"){
 		var name = chatsplit.slice(1).join(" ")
 		var uid = getUID(name)
-		var lastseen = PATRONS[uid].lastseen
-		API.sendChat(name+" was last seen on "+ new Date(lastseen))
-	}
+		if (uid) {
+			var lastseen = PATRONS[uid].lastseen
+			API.sendChat(name+" was last seen on "+ new Date(lastseen))
+		} else {
+			API.sendChat(name+" has never been to this room.")
+		}
+		return
+	};
 	if (chat==="postсount"){
 		API.sendChat("@"+uname+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
-	}
+		return
+	};
 };
 
 function chatFun(uname,chat,chat_orig,uid) {
@@ -1112,10 +1175,34 @@ function chatFun(uname,chat,chat_orig,uid) {
 	if (chat==="triforce"){
 		API.sendChat("▲")
 		setTimeout(function(){API.sendChat("▲  ▲")},200)
+		return
 	};
 	if (chat==="triforce "){
 		API.sendChat("   ▲")
 		setTimeout(function(){API.sendChat("▲  ▲")},200)
+		return
+	};
+	if (chatsplit[0]==="valentine"){
+		if (chatsplit[1]==="showmethescore"){
+			var max = [0,'name']
+			for (var key in VALENTINES){
+				if (VALENTINES[key]>max[0]){
+					max = [VALENTINES[key],key]
+				}
+			}
+			API.sendChat(max[1]+" is the most loved person in this room with "+max[0]+" valentines on their hands!")
+			return
+		}
+		var name = (chat_orig.split(" ").slice(1).join(" "))
+		if (name[0]==="@"){
+			name = name.slice(1)
+		}
+		if (name.slice(-1)===" "){
+			name = name.slice(0,-1)
+		}
+		VALENTINES[name] = VALENTINES[name] + 1 || 1
+		API.sendChat("@"+name+" :chocolate_bar: :heart:")
+		return
 	};
 };	
 
@@ -1134,6 +1221,7 @@ function chatGames(uname,chat,chat_orig,uid) {
 	};
 	if (chatsplit[0]==="russian"){
 		russianRoulette(chat,uid,uname)
+		return
 	}
 };
 
@@ -1142,7 +1230,8 @@ function chatVarious(uname,chat,chat_orig,uid){
 		/* Toggle KITT's persistence in adding tweek to the waitlist. */
 		global_uid = uid
 		SETTINGS.addtweek = Boolean(SETTINGS.addtweek^true)
-	}
+		return
+	};
 	if (chat==="kitt"){
 		/* Just a greeting. */
 		if (Math.random()>=0.3){
@@ -1154,13 +1243,16 @@ function chatVarious(uname,chat,chat_orig,uid){
 	};
 	if (chat==="woot" && assertPermission(uid,0)){
 		$('#woot').click()
-	}
+		return
+	};
 	if (chat==="meh" && assertPermission(uid,0)){
 		$('#meh').click()
-	}
+		return
+	};
 	if (chat==="ping"){
 		API.sendChat("@"+uname+" pong!")
-	}
+		return
+	};
 };
 
 			// MUTATION OBSERVER
@@ -1206,48 +1298,21 @@ function surveillance(mutation){
 		var uid = getUID(name)
 		PATRONS[uid].role = 0
 		if (mutationlists.users_to_mute.indexOf(name)>-1){
-			userMute(uid,1)
+			userMute(uid,1,name)
 		}
-	
 	};
 	if (pattern_muted.test(msg)){
 		var name = msg.slice(6,msg.length-16)
-		addStaff(name)
+		setStaff(name)
 	};
 	if (pattern_staff.test(msg)){
 		var role = msg.split(" ").slice(-1)[0].slice(0,-1)
 		var dj = role==="DJ"
 		var name = msg.split(" ").slice(1,-(3+~~dj)).join(" ")
 		var uid = getUID(name)
+		delete mutationlists.users_to_staff[name]
 		PATRONS[uid].role = ["","DJ","bouncer","manager","co-host","host"].indexOf(role)
 	};
-};
-
-function moveInList(name){
-	while (mutationlists.users_to_add.indexOf(name)!=-1){ // Remove all elements that have that name
-		mutationlists.users_to_add.splice(mutationlists.users_to_add.indexOf(name),1)
-	}
-	if (mutationlists.users_to_move[name] && findInQueue(getUID(name))[1]>mutationlists.users_to_move[name][1]){
-		API.moderateMoveDJ(mutationlists.users_to_move[name][0],mutationlists.users_to_move[name][1])
-	} else {delete mutationlists.users_to_move[name]}
-};
-
-function userMute(name,duration){
-	var uid = getUID(name)
-	var duration = [API.MUTE.SHORT,API.MUTE.MEDIUM,API.MUTE.LONG][duration-1]
-	while (mutationlists.users_to_mute.indexOf(name)!=-1){ // Remove all elements that have that name
-		mutationlists.users_to_mute.splice(mutationlists.users_to_mute.indexOf(name),1)
-	}
-};
-
-function addStaff(name,force,role){
-	var uid = getUID(name)
-	if (mutationlists.users_to_staff[name]){
-		API.moderateSetRole(mutationlists.users_to_staff[name][0],mutationlists.users_to_staff[name][1])
-	}
-	if (force){
-		API.moderateSetRole(uid,role)
-	}
 };
 
 function createEye(){
@@ -1429,6 +1494,42 @@ function tagPlayed(){
 	}
 };
 
+function toggleCycle(manual){
+	/* 
+	Turns DJ cycle on or off depending on wait list length. Called after every WAIT_LIST_UPDATE event. 
+	"manual" argument is passed when called	from chat function. "button.on" and "button.off" seem to be 
+	in the wrong places, but that's plug.dj we are talking about, you can't honestly expect them to do
+	everything properly. Or maybe I'm just missing the point of calling the buttons the other way around. 
+	*/
+	if (SETTINGS.autocycle){
+		var queue = API.getWaitList().length
+		if (queue>14 && DJCYCLE!=false){
+			$('#room-bar').click()
+			setTimeout(function(){$("button.on")[0].click()},250)
+			setTimeout(function(){$('#room-bar').click()},500)
+			DJCYCLE = false
+		}
+		if (queue<10 && DJCYCLE!=true){
+			$('#room-bar').click()
+			setTimeout(function(){$("button.off")[0].click()},250)
+			setTimeout(function(){$('#room-bar').click()},500)
+			DJCYCLE = true
+		}
+	}
+	if (manual === "enable"){
+		$('#room-bar').click()
+		setTimeout(function(){$("button.off")[0].click()},250)
+		setTimeout(function(){$('#room-bar').click()},500)
+		DJCYCLE = true
+	}
+	if (manual === "disable"){
+		$('#room-bar').click()
+		setTimeout(function(){$("button.on")[0].click()},250)
+		setTimeout(function(){$('#room-bar').click()},500)
+		DJCYCLE = false
+	}
+};
+
 			// SCHEDULED FUNCTIONS
 
 function clearDroppedUsers(){
@@ -1487,42 +1588,6 @@ function resetChatCounter(n){
 	}
 	if (n===2){
 		chatsglob[1]=[Date.now(),0]
-	}
-};
-
-function toggleCycle(manual){
-	/* 
-	Turns DJ cycle on or off depending on wait list length. Called after every WAIT_LIST_UPDATE event. 
-	"manual" argument is passed when called	from chat function. "button.on" and "button.off" seem to be 
-	in the wrong places, but that's plug.dj we are talking about, you can't honestly expect them to do
-	everything properly. Or maybe I'm just missing the point of calling the buttons the other way around. 
-	*/
-	if (SETTINGS.autocycle){
-		var queue = API.getWaitList().length
-		if (queue>14 && DJCYCLE!=false){
-			$('#room-bar').click()
-			setTimeout(function(){$("button.on")[0].click()},100)
-			setTimeout(function(){$('#room-bar').click()},300)
-			DJCYCLE = false
-		}
-		if (queue<10 && DJCYCLE!=true){
-			$('#room-bar').click()
-			setTimeout(function(){$("button.off")[0].click()},100)
-			setTimeout(function(){$('#room-bar').click()},300)
-			DJCYCLE = true
-		}
-	}
-	if (manual === "enable"){
-		$('#room-bar').click()
-		setTimeout(function(){$("button.off")[0].click()},100)
-		setTimeout(function(){$('#room-bar').click()},300)
-		DJCYCLE = true
-	}
-	if (manual === "disable"){
-		$('#room-bar').click()
-		setTimeout(function(){$("button.on")[0].click()},100)
-		setTimeout(function(){$('#room-bar').click()},300)
-		DJCYCLE = false
 	}
 };
 
@@ -1799,31 +1864,6 @@ function getChatRate(type){
 	return chatrate
 };
 
-function abusemute(uid){
-	/* Mute for 15 minutes. Removes from staff, mutes, returns back to staff, because only greys can be muted. */
-	if (WORKQUEUE > 1){
-		setTimeout(function(){abusemute(uid)},1000)
-	} else{
-		API.sendChat("You seem to be using the bot wrong")
-		role = API.getUser(uid).role
-		API.moderateSetRole(uid,0)
-		setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
-		setTimeout(function(){API.moderateSetRole(uid,role)},1000)
-		WORKQUEUE -= 1
-	}
-};
-
-function abuseban(uname, uid){
-	/* Ban the person for 1 hour. WORKQUEUE is a temporary solution to force serial execution of function. */
-	if (WORKQUEUE > 1){
-		setTimeout(function(){abuseban(uname,uid)},1000)
-	} else{
-		API.sendChat("@"+uname+" Why are you being such a dipshit?")
-		setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
-		WORKQUEUE -= 1
-	}
-};
-
 function assertPermission(uid,n){
 	/* Checks if the user has permission to do a certain action. 
 	1 — resident DJ; 2 — bouncer; 3 — manager; 4 — cohost; 5 — host; 0 — MasterList only. 
@@ -1859,6 +1899,50 @@ function disableSetting(uid/*, 'setting' args*/){
 	}
 	for (var i=1; i<arguments.length; i++){
 		SETTINGS[arguments[i]]=false
+	}
+};
+
+			// MODERATION
+function moveInList(name,pos){
+	/* Move a person in wait list*/
+	var uid = getUID(name)
+	while (mutationlists.users_to_add.indexOf(name)!=-1){ // Remove all elements that have that name
+		mutationlists.users_to_add.splice(mutationlists.users_to_add.indexOf(name),1)
+	}
+	if (mutationlists.users_to_move[name] && findInQueue(getUID(name))[1]>mutationlists.users_to_move[name][1]){
+		API.moderateMoveDJ(mutationlists.users_to_move[name][0],mutationlists.users_to_move[name][1])
+	} else {delete mutationlists.users_to_move[name]}
+	if (pos){
+		API.moderateMoveDJ(uid,pos)
+	}
+};
+
+function userMute(uid,duration,name){
+	/* Mute a user for a given duration */
+	var uid = uid || getUID(name)
+	var duration = [API.MUTE.SHORT,API.MUTE.MEDIUM,API.MUTE.LONG][duration-1]
+	API.moderateMuteUser(uid,1,duration)
+	while (mutationlists.users_to_mute.indexOf(name)!=-1){ // Remove all elements that have that name
+		mutationlists.users_to_mute.splice(mutationlists.users_to_mute.indexOf(name),1)
+	}
+};
+
+function userBan(name,duration,uid){
+	/* Ban a user for a given duration */
+	var uid = uid || getUID(name)
+	var duration = [API.BAN.HOUR, API.BAN.DAY, API.BAN.PERMA][duration-1]
+	API.moderateBanUser(uid,1,duration)
+};
+
+function setStaff(name,role,uid){
+	/* Set user role. 0 — remove from staff */
+	var uid = uid || getUID(name)
+	if (role){
+		API.moderateSetRole(uid,role)
+		return
+	}
+	if (mutationlists.users_to_staff[name]){
+		API.moderateSetRole(mutationlists.users_to_staff[name][0],mutationlists.users_to_staff[name][1])
 	}
 };
 
@@ -2047,6 +2131,7 @@ function hangman(chat,type,name){
 };
 
 function russianRoulette(chat,uid,uname){
+	PATRONS[uid].lastcommand = null
 	if (chat.split(" ")[1]==="score"){
 		API.sendChat("@"+uname+" "+PATRONS[uid].roulette+", "+(""+Math.pow(0.833,PATRONS[uid].roulette)*100).slice(0,5)+"%")
 		return
@@ -2062,21 +2147,32 @@ function russianRoulette(chat,uid,uname){
 			["",". Highest in this room!"][~~highest])
 		return
 	}
+	if (chat.split(" ")[1]==="highest"){
+		var max = [0,'name']
+		for (var key in PATRONS){
+			if (PATRONS[key].rouletterecord>max[0]){
+				max = [PATRONS[key].rouletterecord,PATRONS[key].name]
+			}
+		}
+		API.sendChat(max[1]+" is the luckiest person in this room with "+max[0]+" consecutive clicks.")
+		return
+	}
 	if (Math.random()<=(1/6)){
 		PATRONS[uid].roulette = 0
-		API.sendChat("/me BANG!")
+		API.sendChat("/me @"+uname+" BANG!")
 		var role = API.getUser(uid).role
 		if (role>0) {
 			mutationlists.users_to_mute.push(uname)
 			mutationlists.users_to_staff[uname]=[uid,role]
 			API.moderateSetRole(uid,0)
-		} else {userMute(uname,1)}
+			setTimeout(function(){if (API.getUser(uid).role!=role){API.moderateSetRole(uid,role)}},2000)
+		} else {userMute(uid,1)}
 	} else {
 		PATRONS[uid].roulette = PATRONS[uid].roulette+1
 		if (PATRONS[uid].roulette>PATRONS[uid].rouletterecord){
 			PATRONS[uid].rouletterecord = PATRONS[uid].roulette
 		}
-		API.sendChat("/me click")
+		API.sendChat("/me @"+uname+" click")
 	}
 	return
 };
@@ -2212,6 +2308,32 @@ function mesrec(data){
 		left_message[name] = data.cid
 	}
 };
+
+function abusemute(uid){
+	/* Mute for 15 minutes. Removes from staff, mutes, returns back to staff, because only greys can be muted. */
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abusemute(uid)},1000)
+	} else{
+		API.sendChat("You seem to be using the bot wrong")
+		role = API.getUser(uid).role
+		API.moderateSetRole(uid,0)
+		setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
+		setTimeout(function(){API.moderateSetRole(uid,role)},1000)
+		WORKQUEUE -= 1
+	}
+};
+
+function abuseban(uname, uid){
+	/* Ban the person for 1 hour. WORKQUEUE is a temporary solution to force serial execution of function. */
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abuseban(uname,uid)},1000)
+	} else{
+		API.sendChat("@"+uname+" Why are you being such a dipshit?")
+		setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
+		WORKQUEUE -= 1
+	}
+};
+
 			// NOT IN USE OR DEPRECATED
 
 
