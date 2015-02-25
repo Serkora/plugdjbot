@@ -19,6 +19,7 @@ var mutationlists = Object.create(null)					// Object to hold all the arrays and
 var global_uid = 0										// global uid value to use in SETTINGS set function.
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
+var SCORE = Object.create(null)							// Saves the song score to update patron data.
 
 var mode = "normal";
 var state = "";
@@ -73,6 +74,11 @@ Object.defineProperties(SETTINGS,{
 // 	}
 });
 
+var prev_chat_uid = 0;
+var this_chat_uid = 0;
+var lost_connection_count = 0;
+var startupnumber = 1
+
 mutationlists.users_to_add = [];							// Objects Mutation Observer checks after a pattern match.
 mutationlists.users_to_move = Object.create(null);
 mutationlists.users_to_mute = [];
@@ -80,6 +86,7 @@ mutationlists.users_to_staff = Object.create(null);
 mutationlists.users_to_destaff = Object.create(null);
 
 var users_to_remove = Object.create(null);
+var users_to_wake_up = [];
 var dropped_users_list = Object.create(null);	// list of users disconnected while in a queue. Associative array 
 												// with 'key' being username. Holds position and time.
 var wlc = [];	
@@ -97,10 +104,11 @@ var chatsglob = [[Date.now(),0],[Date.now(),0]];
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
 						"connected","enable","disable","settings","nodelete","updatepatrons"];
-var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ","valentine"];
+var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ",
+					"valentine","plugpoints"];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
 						"lastpos_slow","signstart","signup","withdraw","signed","signfinish",
-						"leaveafter","lastseen","postсount"];
+						"leaveafter","lastseen","postсount","skip","wakemeup"];
 var commands_games = ["hangman","russian"];
 var commands_various = ["tweekcycle","woot","meh","ping","kitt"];
 var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various);
@@ -132,21 +140,6 @@ var hangmanwordg = "";
 var hangcount = 0;
 var hangtried = [];
 
-var rusroulette = Object.create(null)
-
-var issuedcommands = Object.create(null);
-
-var prev_chat_uid = 0;
-var this_chat_uid = 0;
-
-var WORKQUEUE = 0;
-
-var lost_connection_count = 0;
-
-var startupnumber = 1
-
-var VALENTINES = Object.create(null)
-
 // The below arrays are all loaded from localStorage and don't need to be declared here. *raw is not even used anymore.
 // Are only kept here for reference.
 /*
@@ -163,9 +156,8 @@ var user_commands = [];
 var songlist = [];			
 var songstats = [];
 var BUGREPORTS = [];
-*/
 var allissuedcommands = [];
-
+*/
 
 function start(){
 	/*
@@ -240,8 +232,8 @@ botStart = function(){
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
-		if (message.uid === 5433970) {
-			mesrec(message) // Not really needed anymore
+		if (message.uid === 5433970 || message.uid === 5659102) {
+			kittChats(message) // Not really needed anymore
 		}
 			// Random reply (either a short phrase or a line from some song; KITT loves Bon Jovi and Phil Collins)
 		if (message.message.split(" ")[0]==="@K.I.T.T." && message.un!="K.I.T.T." && message.uid!=5433970) {
@@ -265,6 +257,7 @@ botStart = function(){
 	API.on(API.WAIT_LIST_UPDATE, waitlistUpdate);
 	API.on(API.WAIT_LIST_UPDATE, toggleCycle);
 	API.on(API.WAIT_LIST_UPDATE, reallyLockWaitList);
+	API.on(API.WAIT_LIST_UPDATE, wakeUp);
 	
 	/* On DJ advance check if he is in the dropped_users_list list to prevent !lastpos abuse
 	Updates scrobble list, song length stats, checks if the song is absurdly long while 
@@ -275,34 +268,40 @@ botStart = function(){
 	API.on(API.ADVANCE, statisticUpdate);
 	API.on(API.ADVANCE, mrazotaCheck);
 	API.on(API.ADVANCE, sameArtist);
-	API.on(API.ADVANCE, addTweek);	
-	API.on(API.ADVANCE, removeFromList)
-	API.on(API.ADVANCE, tagPlayed)
-	API.on(API.ADVANCE, patronPlayed)
+	API.on(API.ADVANCE, addTweek);
+	API.on(API.ADVANCE, removeFromList);
+	API.on(API.ADVANCE, tagPlayed);
+	API.on(API.ADVANCE, patronPlayed);
+	API.on(API.ADVANCE, patronScore);
+	
+		/* Updates some info of a user. */
+	API.on(API.USER_JOIN, patronJoin);
 	
 	/* Updates some info of a user. */
-	API.on(API.USER_JOIN, patronJoin)
+	API.on(API.USER_LEAVE, patronLeave);
 	
-	/* Updates some info of a user. */
-	API.on(API.USER_LEAVE, patronLeave)
-		
+	/* Vote events */
+	API.on(API.VOTE_UPDATE, patronVote);
+	
+	/* Score update events */	
+	API.on(API.SCORE_UPDATE, updateScore);
 	/* Compares the votes and calls "mehSkip" in 5 seconds.
 	If there are still 5+ more mehs than woots — skips.
 	If at any point mehs go below the threshold, resets the timer. */
 	API.on(API.SCORE_UPDATE,function(score){
-		if (score.negative>=Math.floor(score.positive*1.25)+5+score.grabs){
+		if (!timeouts.skip && enoughToSkip()){
 			timeouts.skip = setTimeout(function(){mehSkip()},(5000))
 		}
-		if (!!timeouts.skip && score.negative<Math.floor(score.positive*1.25)+5+score.grabs){
+		if (!!timeouts.skip && !enoughToSkip()) {
 			clearTimeouts("skip")
 		}
 	});
 
 	// Saves data to local storage every 10 minutes.
-	setInterval(function(){API.sendChat("/savetolocalstorage")},10*60*1000)
+	timeouts.localsave = setInterval(function(){API.sendChat("/savetolocalstorage")},10*60*1000)
 
 	// Schedules 'left users' cleanup to be called every 30 minutes.
-	setInterval(clearDroppedUsers,(30*60*1000))
+	timeouts.dropped = setInterval(clearDroppedUsers,(30*60*1000))
 
 	/*
 	There are two global chat counters and timers. Each is reset every 30 minutes to only
@@ -312,8 +311,8 @@ botStart = function(){
 	since otherwise it wouldn't be possible to get an accurate chat rate within a couple of
 	minutes of every reset (which is a lot, considering the reset time of only 30 minutes).
 	*/
-	setInterval(function(){resetChatCounter(1)},30*60*1000)
-	setTimeout(function(){setInterval(function(){resetChatCounter(2)},30*60*1000)},15*60*1000)
+	timeouts.chatcount1 = setInterval(function(){resetChatCounter(1)},30*60*1000)
+	setTimeout(function(){timeouts.chatcount2 = setInterval(function(){resetChatCounter(2)},30*60*1000)},15*60*1000)
 		
 		// Chat log that confirms that everything has been initialised properly and bot is up and running.	
 	API.chatLog("I am K.I.T.T.",true)
@@ -322,18 +321,17 @@ botStart = function(){
 botIdle = function(){
 	state = "idle"
 	API.off(API.CHAT)
-	disableModes('autocycle','mehskip','mrazota')
+	disableSetting('autocycle','mehskip','mrazota')
 	
 	console.log("idling...")
 	API.on(API.CHAT, function(data){
-		if (data.message==="!botstart" && state==="idle"){
-			if(assertPermission(uid,3)) {
-				API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
-				botStart()
-			} else{
-				API.sendChat("@"+uname+" You do not have the security clearance for that action."
-				+" If you try this again, you will be prosecuted to the full extent of the law.")
-			}
+		if (data.message==="!botstart" && state==="idle" && assertPermission(uid,3)){
+			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
+			clearInterval(timeouts.localsave)
+			clearInterval(timeouts.dropped)
+			clearInterval(timeouts.chatcount1)
+			clearInterval(timeouts.chatcount2)
+			botStart()
 		}
 	})
 };	
@@ -438,8 +436,9 @@ function chatCommands(command){
 		for (key in catusr){
 			delete catusr[key]
 		}
-		for (key in issuedcommands){
-			delete issuedcommands[key]
+		for (key in PATRONS){
+			PATRONS[key].lastcommand = null
+			PATRONS[key].samecommand = 0
 		}
 		return
 	};
@@ -558,10 +557,6 @@ function chatCommands(command){
 		bothangmanconsole("eng")
 		return
 	};
-	if (command[0]==="/issuedcommands") {
-		console.log(issuedcommands)
-		return
-	};
 	if (command[0]==="/exportcomms") {
 		var data = comminput[0].join(" - ")
 		for (i=1; i<comminput.length; i++){
@@ -656,7 +651,10 @@ function chatCommands(command){
 		return
 	};
 	if (command[0]==="/fixpatrons"){
-	return
+		for (var key in PATRONS){
+			PATRONS[key].lastvote = {sid: 0, vote: 0, grab: false}
+// 			return
+		}
 	};
 };
 
@@ -799,19 +797,19 @@ function chatControl(uname,chat,chat_orig,uid) {
 	}
 	if (chatsplit[0]==="cycle" && assertPermission(uid,3)){
 		/* DJ cycle. Turn automatic toggle on or off. After being switched off, reenables itself in 1.5 hours. */
-		if (chat.split(" ")[1] === "autoon"){
+		if (chatsplit[1] === "autoon"){
 			clearTimeouts("cycle")
 			SETTINGS.autocycle = true
 		}	
-		if (chat.split(" ")[1] === "autooff"){
+		if (chatsplit[1] === "autooff"){
 			clearTimeouts("cycle")
 			timeouts.cycle = setTimeout(function(){SETTINGS.autocycle = true},1.5*60*60*1000)
 			SETTINGS.autocycle = false
 		}
-		if (chat.split(" ")[1] === "on"){
+		if (chatsplit[1] === "on"){
 			toggleCycle("enable")
 		}
-		if (chat.split(" ")[1] === "off"){
+		if (chatsplit[1] === "off"){
 			toggleCycle("disable")
 		}
 		return
@@ -868,6 +866,12 @@ function chatTools(uname,chat,chat_orig,uid) {
 			return
 		}
 		if (!chatsplit[1]){return}	// If no proposal, return from function
+		
+			// Turn all voting listeners off, just in case.
+		API.off(API.CHAT,proposalVoting)
+		API.off(API.CHAT_COMMAND,proposalVoting)
+		clearTimeouts("voting")
+		
 		if (chat.indexOf(" -o ")>-1) {
 			proposals = []
 			voters = []
@@ -1051,6 +1055,33 @@ function chatTools(uname,chat,chat_orig,uid) {
 		API.sendChat("@"+uname+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
 		return
 	};
+	if (chatsplit[0]==="skip" && (assertPermission(uid,2) || API.getDJ().id===uid)) {
+		if (chatsplit.length<2){return}
+		if (chatsplit[1]==="stop"){
+			API.sendChat("Cancelling skip.")
+			clearTimeouts("skipmix")
+			return
+		}
+		if (timeouts.skipmix){
+			var skipin = timeouts.skipmixdur - Date.now()
+			API.sendChat("Skip has already been initialised and the song will be skipped in "+(skipin/1000/60).toFixed(2)+' minutes. Type "!skip stop" to cancel.')
+			return
+		}
+		var duration = +chatsplit[1]<=15 ? +chatsplit[1]*60 : +chatsplit[1]
+		if (API.getMedia().duration < duration){
+			API.sendChat("Entered time is longer than the song's duration.")
+			return
+		}
+		timeouts.skipmix = setTimeout(skipMix,(duration+5)*1000, API.getMedia().cid, duration)
+		timeouts.skipmixdur = Date.now() + duration*1000
+		var durchat = (duration/60)%1 === 0 ? duration/60 : (duration/60).toFixed(2)
+		API.sendChat("The song will be skipped in "+durchat+" minutes.")
+		return
+	}
+	if (chat==="wakemeup"){
+		if (users_to_wake_up.indexOf(uname)<0)
+		users_to_wake_up.push(uname)
+	}
 };
 
 function chatFun(uname,chat,chat_orig,uid) {
@@ -1204,19 +1235,18 @@ function chatFun(uname,chat,chat_orig,uid) {
 		API.sendChat("@"+name+" :chocolate_bar: :heart:")
 		return
 	};
+	if (chat==="plugpoints"){
+		var user = PATRONS[uid]
+		var points = user.songplays + user.woots + user.grabs + user.wooted + user.mehed
+		API.sendChat("@"+uname+", You have "+points+" plugpoints.")
+	};
 };	
 
 function chatGames(uname,chat,chat_orig,uid) {
 	var chatsplit = chat.split(" ")
-	if (chatsplit[0]==="hangman" && chatsplit.length>=2){
+	if (chatsplit[0]==="hangman" && assertPermission(uid,3) && chatsplit.length>=2){
 		/* Initializes hangman mode. Only people in the master list or managers (and above) can start the game. */
-		if (assertPermission(uid,3)){
-			botHangman(chatsplit[1])
-		} else{
-			API.sendChat("@"+uname+" You do not have the security clearance for that action."
-						+" If you try this again, you will be prosecuted to the full extent of the law.")
-			issuedcommands[uid][1] = 5
-		}
+		botHangman(chatsplit[1])
 		return
 	};
 	if (chatsplit[0]==="russian"){
@@ -1339,7 +1369,7 @@ function waitlistUpdate(object){
 function mehSkip(){
 	/* Skips the awful awful track. */
 	if (!(SETTINGS.mehskip)){return}
-	if (API.getScore().negative>=Math.floor(API.getScore().positive*1.4)+4){
+	if (enoughToSkip()){
 		var djname = API.getDJ().username
 		API.moderateForceSkip()
 		if (Math.random() > 0.6){
@@ -1478,13 +1508,15 @@ function reallyLockWaitList(){
 };
 
 function removeFromList(){
-	for (var key in users_to_remove){
-		var user = users_to_remove[key]
-		if (user[1] && API.getDJ().id!=user[0]){
-			setTimeout(API.moderateRemoveDJ,500,user[0])
-			delete users_to_remove[key]
+	setTimeout(function(){
+		for (var key in users_to_remove){
+			var user = users_to_remove[key]
+			if (user[1] && API.getDJ().id!=user[0]){
+				API.moderateRemoveDJ(user[0])
+				delete users_to_remove[key]
+			}
 		}
-	}
+	},500)
 };
 
 function tagPlayed(){
@@ -1505,14 +1537,14 @@ function toggleCycle(manual){
 		var queue = API.getWaitList().length
 		if (queue>14 && DJCYCLE!=false){
 			$('#room-bar').click()
-			setTimeout(function(){$("button.on")[0].click()},250)
-			setTimeout(function(){$('#room-bar').click()},500)
+			setTimeout(function(){$("button.on")[0].click()},500)
+			setTimeout(function(){$('#room-bar').click()},1000)
 			DJCYCLE = false
 		}
 		if (queue<10 && DJCYCLE!=true){
 			$('#room-bar').click()
-			setTimeout(function(){$("button.off")[0].click()},250)
-			setTimeout(function(){$('#room-bar').click()},500)
+			setTimeout(function(){$("button.off")[0].click()},500)
+			setTimeout(function(){$('#room-bar').click()},1000)
 			DJCYCLE = true
 		}
 	}
@@ -1529,6 +1561,28 @@ function toggleCycle(manual){
 		DJCYCLE = false
 	}
 };
+
+function updateScore(){
+	if (API.getTimeElapsed()<3 && !SCORE.saved){
+		setTimeout(updateScore,3000)
+		return
+	}
+	var score = API.getScore()
+	var uid = API.getDJ().id
+	SCORE.uid = uid
+	SCORE.woot = score.positive
+	SCORE.grab = score.grabs
+	SCORE.meh = score.negative
+	SCORE.saved = false
+};
+
+function wakeUp(){
+	var name = API.getWaitList()[0].username
+	if (users_to_wake_up.indexOf(name)>-1){
+		API.sendChat("@"+name+", wake up!")
+		users_to_wake_up.splice(users_to_wake_up.indexOf(name),1)
+	}
+}
 
 			// SCHEDULED FUNCTIONS
 
@@ -1557,7 +1611,7 @@ function clearIssued(chat,uid){
 	setTimeout(function(){
 		if (PATRONS[uid].lastcommand === chat.split(" ")[0]) {
 			PATRONS[uid].lastcommand = null
-			PATRONS[uid].samecommands = 0
+			PATRONS[uid].samecommand = 0
 		}
 	},2*60*1000);
 };
@@ -1602,22 +1656,26 @@ function compareSongInList(songinlist, songplaying){
 
 function clearTimeouts(type){
 	/* Clear the scheduled function of a specified type. */
-	if (!!timeouts.cycle && type==="cycle") {
-		clearTimeout(timeouts.cycle)
-		timeouts.cycle = null
+	if (!!timeouts[type]){
+		clearTimeout(timeouts[type])
+		delete timeouts[type]
 	}
-	if (!!timeouts.skip && type==="skip") {
-		clearTimeout(timeouts.skip)
-		timeouts.skip = null
-	}
-	if (!!timeouts.voting && type==="voting"){
-		clearTimeout(timeouts.voting)
-		timeouts.voting = null		
-	}
-	if (!!timeouts.sign && type==="sign"){
-		clearTimeout(timeouts.sign)
-		timeouts.sign = null		
-	}
+// 	if (!!timeouts.cycle && type==="cycle") {
+// 		clearTimeout(timeouts.cycle)
+// 		timeouts.cycle = null
+// 	}
+// 	if (!!timeouts.skip && type==="skip") {
+// 		clearTimeout(timeouts.skip)
+// 		timeouts.skip = null
+// 	}
+// 	if (!!timeouts.voting && type==="voting"){
+// 		clearTimeout(timeouts.voting)
+// 		timeouts.voting = null		
+// 	}
+// 	if (!!timeouts.sign && type==="sign"){
+// 		clearTimeout(timeouts.sign)
+// 		timeouts.sign = null		
+// 	}
 };
 
 function proposalVoting(data){
@@ -1642,7 +1700,7 @@ function proposalVoting(data){
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
-	}
+	};
 	if (chat[0].toLowerCase()==="!votenay"){
 		if (voters.indexOf(uid)<0){
 			voters.push(uid)
@@ -1654,7 +1712,7 @@ function proposalVoting(data){
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
-	}
+	};
 		
 		// Multiple proposals.
 	if (chat[0].toLowerCase()==="!vote"){
@@ -1675,7 +1733,7 @@ function proposalVoting(data){
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
-	}	
+	};
 		// Counting the votes.	
 	if (chat[0].toLowerCase()==="!voteend" && (assertPermission(uid,0) || votestarter === uid)) {
 		// If 'proposal' is declared, the single-option voting is in process.
@@ -1715,7 +1773,9 @@ function proposalVoting(data){
 				API.sendChat("The winning option of today's voting is: "+result+" with "+maxvotes+" votes.")
 				API.sendChat("/votefinish")
 			} else if (winprop.length>=4){
-				API.sendChat('Four or more options have the same score. I strongly advise you to revote. Type "!revote" to do that.')
+				API.sendChat('Four or more options have the same score of '+maxvotes+' votes. I strongly advise you to revote. Type "!revote" to do that.')
+				reproposals = proposals
+				proposals = null
 			} else {
 				var ties = ""
 				tiedproposals = []
@@ -1727,12 +1787,14 @@ function proposalVoting(data){
 				}
 				ties = ties.slice(0,-2) + "."
 				tiedproposals.forEach(function(elem){elem[1]=0})
+				proposals = null
+				clearTimeouts("voting")
 				API.sendChat(winprop.length+" options are tied with "+maxvotes+" votes each. They are: "+ties)
 				setTimeout(function(){API.sendChat('If you would like to restart the voting with those options only, type "!voteties"')},500)
 			}
 		}
 		return
-	}
+	};
 	if (chat[0].toLowerCase()==="!votestandings") {
 		if (proposal) {
 			API.sendChat("Currently "+propvotes[0]+" have voted 'yea', and "+propvotes[1]+" have voted 'nay'")
@@ -1756,7 +1818,7 @@ function proposalVoting(data){
 			}
 			return
 		}
-	}
+	};
 	if (chat[0].toLowerCase()==="!voteties" && (assertPermission(uid,0) || votestarter === uid)){
 		// Create a "chat message" object and call a function as if a chat message was sent.
 		proposals = null
@@ -1767,7 +1829,7 @@ function proposalVoting(data){
 		chat.cid = "0"
 		chatClassifier(chat)
 		
-	}
+	};
 	if (chat[0].toLowerCase()==="!revote" && (assertPermission(uid,0) || uid === votestarter)){
 		// Create a "chat message" object and call a function as if a chat message was sent.
 		if (proposal){
@@ -1780,13 +1842,14 @@ function proposalVoting(data){
 			proposal = null
 			chatClassifier(chat)
 		}
-		if (proposals){
+		if (reproposals){
 			var message = "!votestart "
-			proposals.forEach(function(elem){
+			reproposals.forEach(function(elem){
 				message += elem[0] + " -o "
 			})
 			message = message.slice(0,-4)
 			proposals = null
+			reproposals = null
 			var chat = {}
 			chat.un = "name"
 			chat.uid = votestarter
@@ -1794,7 +1857,7 @@ function proposalVoting(data){
 			chat.cid = "0"
 			chatClassifier(chat)
 		}
-	}
+	};
 	if (chat[0].toLowerCase()==="!voteremind" && (assertPermission(uid,2) || uid===votestarter)) {
 		if (proposal) {
 			API.sendChat("The voting is in progress. Today's proposal is: "+proposal+'. Vote by typing "!voteyea" or "!votenay"')
@@ -1804,7 +1867,7 @@ function proposalVoting(data){
 			API.sendChat(chat)
 			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
 		}
-	}
+	};
 	if (data==="/votefinish" || (chat[0].toLowerCase()==="!votehalt" && (assertPermission(uid,4) || votestarter===uid))) {
 	// Remove all voting-related variables and turn off chat listeners.
 		propvotes = null
@@ -1816,7 +1879,7 @@ function proposalVoting(data){
 		API.off(API.CHAT,proposalVoting)
 		API.off(API.CHAT_COMMAND,proposalVoting)
 		clearTimeouts("voting")
-	}
+	};
 };
 
 function findInQueue(uid){
@@ -1844,6 +1907,9 @@ function getName(uid){
 	var users = API.getUsers()
 	var name
 	users.forEach(function(elem){if (elem.id===uid){name = elem.username}})
+	if (!name){
+		name = PATRONS[uid].name
+	}
 	return name
 };
 
@@ -1884,7 +1950,7 @@ function enableSetting(uid/*, 'setting' args*/){
 		return
 	}
 	for (var i=1; i<arguments.length; i++){
-		SETTINGS[argumenets[i]]=true
+		SETTINGS[arguments[i]]=true
 	}
 };
 
@@ -1902,6 +1968,41 @@ function disableSetting(uid/*, 'setting' args*/){
 	}
 };
 
+function enoughToSkip(){
+	var score = API.getScore()
+	var users = API.getUsers()
+	var grey = 0
+	users.forEach(function(elem){if (elem.role<=1){grey++}})
+	if (API.getTimeElapsed()<10){return false}
+	if (score.negative >= (Math.floor(score.positive*1.25)+Math.floor(grey/5)+3)) {
+		return true
+	} else {return false}
+};
+
+function skipMix(songid, duration){
+	var id = API.getMedia().cid
+	clearTimeouts("skipmix")
+	if (songid !== id) {
+		return
+	}
+	if (API.getTimeElapsed()>=duration){
+		API.moderateForceSkip()
+	}
+};
+
+function kittChats(data){
+	/* Tracks messages from bot and acts if needed. Currently only "!lastpos" messages
+	are deleted if moved successfully or person was not in list (after a short delay). */
+	var p_lastpos = /is not in the list. Sorry.$/
+	var p_wakeup = /wake up!$/
+	if (p_lastpos.test(data.message)){
+		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
+	}
+	if (p_wakeup.test(data.message)){
+		API.moderateDeleteChat(data.cid)
+	}
+};
+
 			// MODERATION
 function moveInList(name,pos){
 	/* Move a person in wait list*/
@@ -1912,6 +2013,7 @@ function moveInList(name,pos){
 	if (mutationlists.users_to_move[name] && findInQueue(getUID(name))[1]>mutationlists.users_to_move[name][1]){
 		API.moderateMoveDJ(mutationlists.users_to_move[name][0],mutationlists.users_to_move[name][1])
 	} else {delete mutationlists.users_to_move[name]}
+	
 	if (pos){
 		API.moderateMoveDJ(uid,pos)
 	}
@@ -1953,7 +2055,7 @@ function updatePatrons(){
 		var user = u[i]
 		updatePatron(user)
 	}
-}
+};
 
 function modifyPatron(name, prop, value){
 	var uid = getUID(name)
@@ -1963,7 +2065,7 @@ function modifyPatron(name, prop, value){
 		PATRONS[uid][prop] = parseInt(value)
 	}
 	return
-}
+};
 
 function updatePatron(user){
 	if (!PATRONS[user.id]){
@@ -1982,7 +2084,7 @@ function updatePatron(user){
 	patron.role = user.role
 	patron.prole = user.role
 	PATRONS[user.id] = patron
-}
+};
 
 function patronJoin(user){
 	if (!PATRONS[user.id]){
@@ -1999,17 +2101,62 @@ function patronJoin(user){
 		patron.session = Date.now()
 		PATRONS[user.id] = patron
 	}
-}
+};
 
 function patronLeave(user){
 	if (PATRONS[user.id]){
 		PATRONS[user.id].lastseen = Date.now()
 	}
-}
+};
 
 function patronPlayed(data){
 	PATRONS[data.dj.id].songplays += 1
-}
+};
+
+function patronScore(){
+	var woot = SCORE.woot
+	var meh = SCORE.meh
+	var grab = SCORE.grab
+	var uid = SCORE.uid
+	PATRONS[uid].woots += woot
+	PATRONS[uid].grabs += grab
+	PATRONS[uid].mehs += meh
+	SCORE = Object.create(null)
+	SCORE.saved = true
+	updateScore()
+};
+
+function patronVote(data){
+	/* Updates the votes of a patrons. If the song id of the last vote is not the same is this one,
+	simply adds the score/grabs, otherwise checks what the last vote was and removes it from 
+	the patron object, adding the new one. */
+	var uid = data.user.id
+	var score = data.vote
+	var grab = data.user.grab
+	var user = PATRONS[uid]
+	var sid = API.getMedia().cid
+	if (user.lastvote.sid != sid){
+		score > 0 ? user.wooted += 1 : user.mehed += 1
+		user.lastvote.grab = grab
+		user.grabbed += +grab
+		user.lastvote.sid = sid
+		PATRONS[uid] = user
+		return
+	}
+	if (!user.lastvote.grab && grab){
+		user.grabbed += 1
+		user.lastvote.grab = true
+	}
+	if (user.lastvote.vote === score || score === 0){PATRONS[uid] = user; return}
+	if (user.lastvote.vote != 0){
+		user.lastvote.vote > 0 ? user.wooted -= 1 : user.mehed -= 1
+	}
+	if (user.lastvote.vote === 0){
+		score > 0 ? user.wooted += 1 : user.mehed += 1
+	}
+	PATRONS[uid] = user
+	return
+};
 
 			// GAMES
 function hangmanChat(data){
@@ -2195,7 +2342,13 @@ function Patron(id){
 	this.roulette = 0
 	this.rouletterecord = 0
 	this.songplays = 0
-}
+	this.woots = 0
+	this.grabs = 0
+	this.mehs = 0
+	this.wooted = 0
+	this.grabbed = 0
+	this.mehed = 0
+};
 
 			// STACKOVERFLOW SOLUTIONS
 /*
@@ -2293,19 +2446,6 @@ function addandmove_deletechat(name,position,uid){
 	if (!moved) {
 		WORKQUEUE += 1
 		addandmove(uid,position)
-	}
-};
-
-function mesrec(data){
-	/* Tracks messages from bot and acts if needed. Currently only "!lastpos" messages
-	are deleted if moved successfully or person was not in list (after a short delay). */
-	if (data.message.indexOf("not in the list") > -1) {
-		setTimeout(function(){API.moderateDeleteChat(data.cid)},1000)
-	}
-	if (data.message.indexOf("last position") > -1) {
-		msg = data.message.split("'s last position was")
-		name = msg[0]
-		left_message[name] = data.cid
 	}
 };
 
