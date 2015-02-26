@@ -78,6 +78,7 @@ Object.defineProperties(SETTINGS,{
 var prev_chat_uid = 0;
 var this_chat_uid = 0;
 var lost_connection_count = 0;
+var songstuck = 0
 var startupnumber = 1
 
 mutationlists.users_to_add = [];							// Objects Mutation Observer checks after a pattern match.
@@ -204,6 +205,8 @@ botInit = function(){
 	botStart()
 	// Checks the connection every 5 minutes and reconnects if necessary.
 	setInterval(checkConnection,5*60*1000)
+	// Start the stuck song loop
+	checkStuck()
 };
 
 botStart = function(){
@@ -218,9 +221,6 @@ botStart = function(){
 	state = "running"
 	enableSetting(4702482,"all")	// Enables all
 	disableSetting.apply(this,[4702482].concat(SETTINGS.disabled)) // And then disables what was off at the time of the last autosave.
-// 	for (var i=0; i<SETTINGS.disabled.length; i++){
-// 		disableSetting(4702482,SETTINGS.disabled[i])
-// 	}
 
 	// Get waitlist at start
 	wlp = API.getWaitList()
@@ -656,8 +656,8 @@ function chatCommands(command){
 	};
 	if (command[0]==="/fixpatrons"){
 		for (var key in PATRONS){
-			PATRONS[key].lastvote = {sid: 0, vote: 0, grab: false}
-// 			return
+// 			PATRONS[key].lastvote = {sid: 0, vote: 0, grab: false}
+			return
 		}
 	};
 };
@@ -1604,7 +1604,7 @@ function wakeUp(){
 		API.sendChat("@"+name+", wake up!")
 		users_to_wake_up.splice(users_to_wake_up.indexOf(name),1)
 	}
-}
+};
 
 			// SCHEDULED FUNCTIONS
 
@@ -1676,6 +1676,35 @@ function resetChatCounter(n){
 	if (n===2){
 		chatsglob[1]=[Date.now(),0]
 	}
+};
+
+function checkStuck(){
+	/* Gets the remaining time of a track and then calls itself after the song should've ended to check if it changed successfully
+	by calling itself again a few times in a short period. If no one is playing, wait half an hour before next check. 
+	If the song was stuck for more than ~15 seconds and couldn't have been skipped — calls itself in 30 minutes, by which
+	time either everything gets fixed, plug goes down or bot restarts. */
+	if (!API.getDJ() && songstuck>=7){
+		setTimeout(checkStuck,30*60*1000)
+		return
+	}
+	var timeleft = API.getTimeRemaining()
+	if (timeleft>=3){
+		songstuck = 0
+		setTimeout(checkStuck,(timeleft+1)*1000)
+		return
+	}
+	if (songstuck<3){
+		songstuck++
+		setTimeout(checkStuck,2000)
+		return
+	}
+	if (songstuck<7){
+		songstuck++
+		API.moderateForceSkip()
+		setTimeout(checkStuck,2000)
+		return
+	}
+	
 };
 
 			// SUPPORTING FUNCTIONS
@@ -2039,8 +2068,9 @@ EMOJILIST = {
 	'emoji-1f3a7': "headphones",
 	'emoji-1f251': "accept",
 	'emoji-1f524': "abc",
-	'emoji-1f521': "abcd"
-}
+	'emoji-1f521': "abcd",
+	'emoji-1f4a9': "shit"
+};
 
 function fixLinksAndEmoji(message){
 	var text = message
@@ -2195,7 +2225,7 @@ function patronScore(){
 	PATRONS[uid].woots += woot
 	PATRONS[uid].grabs += grab
 	PATRONS[uid].mehs += meh
-	SCORE = Object.create(null)
+	SCORE = {woot: 0, meh: 0, grab: 0, uid: uid}
 	SCORE.saved = true
 	updateScore()
 };
