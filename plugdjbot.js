@@ -10,13 +10,14 @@ GLOBAL = this
 COMMAND_SYMBOL = "!"
 DELETE_COMMANDS = true
 DATA = Object.create(null)
+BOT_USERID = 5433970
 
 	// Global variables declaration.
 var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that can fully control the bot.
 var IgnoreList = []
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var mutationlists = Object.create(null)					// Object to hold all the arrays and objects the MutationObserver should refer to.
-var global_uid = 0										// global uid value to use in SETTINGS set function.
+var global_uid = null									// global uid value to use in SETTINGS set function.
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
@@ -84,6 +85,7 @@ mutationlists.users_to_move = Object.create(null);
 mutationlists.users_to_mute = [];
 mutationlists.users_to_staff = Object.create(null);
 mutationlists.users_to_destaff = Object.create(null);
+mutationlists.connectionCID = null
 
 var users_to_remove = Object.create(null);
 var users_to_wake_up = [];
@@ -103,11 +105,11 @@ var chatsglob = [[Date.now(),0],[Date.now(),0]];
 
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
-						"connected","enable","disable","settings","nodelete","updatepatrons"];
+						"connected","enable","disable","settings","nodelete"];
 var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ",
 					"valentine","plugpoints"];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
-						"lastpos_slow","signstart","signup","withdraw","signed","signfinish",
+						"signstart","signup","withdraw","signed","signfinish",
 						"leaveafter","lastseen","postсount","skip","wakemeup"];
 var commands_games = ["hangman","russian"];
 var commands_various = ["tweekcycle","woot","meh","ping","kitt"];
@@ -214,10 +216,11 @@ botStart = function(){
 	
 	API.off() // Turns of all listeners (that may remain after botIdle, for example)
 	state = "running"
-	enableSetting(4702482,"all")
-	for (var i=0; i<SETTINGS.disabled.length; i++){
-		disableSetting(4702482,SETTINGS.disabled[i])
-	}
+	enableSetting(4702482,"all")	// Enables all
+	disableSetting.apply(this,[4702482].concat(SETTINGS.disabled)) // And then disables what was off at the time of the last autosave.
+// 	for (var i=0; i<SETTINGS.disabled.length; i++){
+// 		disableSetting(4702482,SETTINGS.disabled[i])
+// 	}
 
 	// Get waitlist at start
 	wlp = API.getWaitList()
@@ -232,8 +235,9 @@ botStart = function(){
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
-		if (message.uid === 5433970 || message.uid === 5659102) {
-			kittChats(message) // Not really needed anymore
+		if (message.uid === BOT_USERID) {
+			// Messages from bot.
+			kittChats(message)
 		}
 			// Random reply (either a short phrase or a line from some song; KITT loves Bon Jovi and Phil Collins)
 		if (message.message.split(" ")[0]==="@K.I.T.T." && message.un!="K.I.T.T." && message.uid!=5433970) {
@@ -670,12 +674,17 @@ function chatClassifier(message){
 		this_chat_uid = 0						// Removes the last chat uid in case the command did not require any text response from bot.
 	}
 	if (message.message===COMMAND_SYMBOL+"connected"){	// It has to be a chat and not chat_command, because the latter works even without connection.
+		mutationlists.connectionCID = message.cid
 		API.moderateDeleteChat(message.cid) // Deletes the "!connected" message regardless of blocks.
 	}
 	
+	
+		// Only run fix function if the length of a chat is large enough to even contain a link.
+	var text = message.message.length > 50 ? fixLinksAndEmoji(message.message) : message.message
+		
 	var uname = message.un;					
-	var chat = message.message.slice(1).toLowerCase();	// just for convenience
-	var chat_orig = message.message.slice(1);			// aaand it backfired.
+	var chat = text.slice(1).toLowerCase();	// just for convenience
+	var chat_orig = text.slice(1);			// aaand it backfired.
 	var uid = message.uid;
 	
 	if (!(/vote/.test(chat) || chat==="connected")){
@@ -1289,11 +1298,17 @@ function chatVarious(uname,chat,chat_orig,uid){
 function surveillance(mutation){
 	/* 
 	Observes changes in the chat, catching when exactly something happened in order to avoid
-	the swamp of setTimeouts in some functions. First checks if there even are things to do.
+	the swamp of setTimeouts in some functions. After each step checks if there even are things to do.
 	A kind of weird way to get a username in "move" is to be _absolutely_ certain that the 
 	right name was obtained, regardless of how many spaces it has or even has "from position" in it.
 	*/
-	if (mutation[0].addedNodes.length===0) {return}
+	if (mutation[0].addedNodes.length===0 || mutation[0].removedNodes.length===0) {return}
+	
+	if (mutation[0].removedNodes[0].attributes[1].value===mutationlists.connectionCID){
+		lost_connection_count = 0
+		return
+	}
+	
 	if (mutation[0].addedNodes[0].className!="cm moderation") {return}
 	
 		//Patterns to look for.
@@ -1309,19 +1324,23 @@ function surveillance(mutation){
 		// Track the dj cycle status
 	if (msg==="enabled DJ cycle."){
 		DJCYCLE = true
+		return
 	};
 	if (msg==="disabled DJ cycle."){
 		DJCYCLE = false
+		return
 	};
 
 		// Pattern matching.
 	if (pattern_add.test(msg)){
 		var name = msg.slice(6,msg.length-18)
 		moveInList(name)
+		return
 	};
 	if (pattern_move.test(msg)){
 		var name = msg.slice(6,msg.length-49+(msg.slice(-48).search('from position ')))
 		delete mutationlists.users_to_move[name]
+		return
 	};
 	if (pattern_destaff.test(msg)){
 		var name = msg.slice(8,msg.length-16)
@@ -1330,10 +1349,12 @@ function surveillance(mutation){
 		if (mutationlists.users_to_mute.indexOf(name)>-1){
 			userMute(uid,1,name)
 		}
+		return
 	};
 	if (pattern_muted.test(msg)){
 		var name = msg.slice(6,msg.length-16)
 		setStaff(name)
+		return
 	};
 	if (pattern_staff.test(msg)){
 		var role = msg.split(" ").slice(-1)[0].slice(0,-1)
@@ -1342,6 +1363,7 @@ function surveillance(mutation){
 		var uid = getUID(name)
 		delete mutationlists.users_to_staff[name]
 		PATRONS[uid].role = ["","DJ","bouncer","manager","co-host","host"].indexOf(role)
+		return
 	};
 };
 
@@ -1619,13 +1641,16 @@ function clearIssued(chat,uid){
 function checkConnection(){
 	/*
 	Every n minutes increments connection counter and sends the reset command. If bot is not 
-	properly connected (can't send/receive chat), the counter won't be reset and after
+	properly connected (can't send, receive and delete chats), the counter won't be reset and after
 	reaching a limit the page will refresh.
 	*/
 	if (lost_connection_count===2){
 		botRestart()
+		return
 	}
 	if (API.getTimeRemaining()<1 && API.getDJ()){
+		// If 0 time left of a song and someone's in a booth, then something's probably wrong. Check again in 20 secs
+		// whether that's a coincidence. If the song is still stuck — restarts regardless of chat.
 		lost_connection_count++
 		setTimeout(function(){checkConnection()},20*1000)
 		return
@@ -1633,6 +1658,14 @@ function checkConnection(){
 	if (getChatRate('short')===0){
 		lost_connection_count++
 		API.sendChat("!connected")
+		// MutationObserver should catch the message deletion. If that didn't happen (twice in a row) — restart.
+		// Timeout is because it takes some time to send and delete the message.
+		// 5 seconds is long enough to not classify lags as a lost connection.
+		setTimeout(function(){
+			if (lost_connection_count>1){
+				botRestart()
+			}
+		},5000)
 	}
 };
 
@@ -1991,8 +2024,7 @@ function skipMix(songid, duration){
 };
 
 function kittChats(data){
-	/* Tracks messages from bot and acts if needed. Currently only "!lastpos" messages
-	are deleted if moved successfully or person was not in list (after a short delay). */
+	/* Tracks messages from bot and acts if needed. */
 	var p_lastpos = /is not in the list. Sorry.$/
 	var p_wakeup = /wake up!$/
 	if (p_lastpos.test(data.message)){
@@ -2001,6 +2033,48 @@ function kittChats(data){
 	if (p_wakeup.test(data.message)){
 		API.moderateDeleteChat(data.cid)
 	}
+};
+
+EMOJILIST = {
+	'emoji-1f3a7': "headphones",
+	'emoji-1f251': "accept",
+	'emoji-1f524': "abc",
+	'emoji-1f521': "abcd"
+}
+
+function fixLinksAndEmoji(message){
+	var text = message
+	var pattern_link = /(.*)(<a href=")(.*)(" target=)(.*)(<\/a>)(.*)/
+	var pattern_emoji = /(.*)(<span class="emoji)(.*)(<span class="emoji )(.*)("><\/span><\/span>)(.*)/
+	var pattern_emojicodes = /emoji-[^glow][a-z0-9]*(?=")/gi
+	var hasemoji = false
+
+	while (pattern_link.test(text)){
+		text = text.replace(pattern_link,'$1$3$7')	// replace <a href>...</a> (if present) with just a text link
+	}
+		// If no emojis — return the text now
+	if (pattern_emoji.test(text)){
+		hasemoji = true
+		var emojicodes = text.match(pattern_emojicodes)
+	} else {
+		return text
+	}
+	while (pattern_emoji.test(text)){
+		text = text.replace(pattern_emoji,'$1$5$7')	// replace emojis with their :EMOJI: texts
+	}
+	function getEmoji(text){
+		// Either gets the emoji from dictionary (emoji-1f521 -> :accept:) or, 
+		// if lucky, simply slices the text (e.g. emoji-shipit -> :shipit:)
+		if (text in EMOJILIST){
+			return ":"+EMOJILIST[text]+":"
+		} else {
+			return ":"+text.slice(6)+":"
+		}
+	}
+	for (var i=0; i<emojicodes.length; i++){
+		text = text.replace(emojicodes[i],getEmoji(emojicodes[i]))
+	}
+	return text
 };
 
 			// MODERATION
@@ -2140,6 +2214,7 @@ function patronVote(data){
 		user.lastvote.grab = grab
 		user.grabbed += +grab
 		user.lastvote.sid = sid
+		user.lastvote.vote = score
 		PATRONS[uid] = user
 		return
 	}
@@ -2151,9 +2226,8 @@ function patronVote(data){
 	if (user.lastvote.vote != 0){
 		user.lastvote.vote > 0 ? user.wooted -= 1 : user.mehed -= 1
 	}
-	if (user.lastvote.vote === 0){
-		score > 0 ? user.wooted += 1 : user.mehed += 1
-	}
+	score > 0 ? user.wooted += 1 : user.mehed += 1
+	user.lastvote.vote = score
 	PATRONS[uid] = user
 	return
 };
@@ -2348,6 +2422,7 @@ function Patron(id){
 	this.wooted = 0
 	this.grabbed = 0
 	this.mehed = 0
+	this.lastvote = {sid: 0, vote: 0, grab: false}
 };
 
 			// STACKOVERFLOW SOLUTIONS
