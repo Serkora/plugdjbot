@@ -176,7 +176,6 @@ function start(){
 		setTimeout(function(){$("div.item.s-av.selected").click()},660)
 		setTimeout(function(){$("div.back").click()},1000)
 		botInit()
-		createEye()
 	} else{
 		if (startupnumber < 11){	
 			setTimeout(function(){
@@ -207,6 +206,8 @@ botInit = function(){
 	setInterval(checkConnection,5*60*1000)
 	// Start the stuck song loop
 	checkStuck()
+	// Wake Big Brother up.
+	createEye()
 };
 
 botStart = function(){
@@ -1302,12 +1303,15 @@ function surveillance(mutation){
 	A kind of weird way to get a username in "move" is to be _absolutely_ certain that the 
 	right name was obtained, regardless of how many spaces it has or even has "from position" in it.
 	*/
-	if (mutation[0].addedNodes.length===0 || mutation[0].removedNodes.length===0) {return}
-	
-	if (mutation[0].removedNodes[0].attributes[1].value===mutationlists.connectionCID){
+	if (mutation[0].addedNodes.length===0 && mutation[0].removedNodes.length===0) {return}
+
+	if (mutation[0].removedNodes.length > 0 && mutation[0].removedNodes[0].attributes[1].value===mutationlists.connectionCID){
 		lost_connection_count = 0
+		mutatiolists.connectionCID = null
 		return
 	}
+	
+	if (mutation[0].addedNodes.length===0){return}
 	
 	if (mutation[0].addedNodes[0].className!="cm moderation") {return}
 	
@@ -1599,6 +1603,7 @@ function updateScore(){
 };
 
 function wakeUp(){
+	if (API.getWaitList().length===0){return}
 	var name = API.getWaitList()[0].username
 	if (users_to_wake_up.indexOf(name)>-1){
 		API.sendChat("@"+name+", wake up!")
@@ -1683,7 +1688,7 @@ function checkStuck(){
 	by calling itself again a few times in a short period. If no one is playing, wait half an hour before next check. 
 	If the song was stuck for more than ~15 seconds and couldn't have been skipped — calls itself in 30 minutes, by which
 	time either everything gets fixed, plug goes down or bot restarts. */
-	if (!API.getDJ() && songstuck>=7){
+	if (!API.getDJ() || songstuck>=7){
 		setTimeout(checkStuck,30*60*1000)
 		return
 	}
@@ -2064,19 +2069,11 @@ function kittChats(data){
 	}
 };
 
-EMOJILIST = {
-	'emoji-1f3a7': "headphones",
-	'emoji-1f251': "accept",
-	'emoji-1f524': "abc",
-	'emoji-1f521': "abcd",
-	'emoji-1f4a9': "shit"
-};
-
 function fixLinksAndEmoji(message){
 	var text = message
 	var pattern_link = /(.*)(<a href=")(.*)(" target=)(.*)(<\/a>)(.*)/
 	var pattern_emoji = /(.*)(<span class="emoji)(.*)(<span class="emoji )(.*)("><\/span><\/span>)(.*)/
-	var pattern_emojicodes = /emoji-[^glow][a-z0-9]*(?=")/gi
+	var pattern_emojicodes = /emoji-(?!glow)[a-z0-9\-]*(?=")/gi
 	var hasemoji = false
 
 	while (pattern_link.test(text)){
@@ -2095,8 +2092,8 @@ function fixLinksAndEmoji(message){
 	function getEmoji(text){
 		// Either gets the emoji from dictionary (emoji-1f521 -> :accept:) or, 
 		// if lucky, simply slices the text (e.g. emoji-shipit -> :shipit:)
-		if (text in EMOJILIST){
-			return ":"+EMOJILIST[text]+":"
+		if (text in EMOJIDICT){
+			return ":"+EMOJIDICT[text]+":"
 		} else {
 			return ":"+text.slice(6)+":"
 		}
