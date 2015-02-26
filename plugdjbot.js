@@ -698,7 +698,7 @@ function chatClassifier(message){
 		PATRONS[uid].lastcommand = chat.split(" ")[0]
 		PATRONS[uid].samecommand = 0
 		clearIssued(chat,uid)
-	}
+	} 
 	
 	if (PATRONS[uid].samecommand === 4) {
 		API.sendChat("@"+uname+" If you send the same command once more, divine punishment will befall you.")
