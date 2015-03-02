@@ -21,7 +21,7 @@ var global_uid = null									// global uid value to use in SETTINGS set functio
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
-var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks
+// var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from localStorage.
 
 var mode = "normal";
 var state = "";
