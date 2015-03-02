@@ -26,7 +26,7 @@ var SCORE = Object.create(null)							// Saves the song score to update patron d
 var mode = "normal";
 var state = "";
 // What type of commands to respond to or actions to take.
-var SETTINGS = {fun: true, tools: true, various: true, games: true, mehskip: true, 
+var SETTINGS = {fun: true, tools: true, various: true, games: true, mehskip: true, disabled: [],
 			autocycle: true, mrazota: true, sameartist: true, setstaff: true, games: {hangman: false}}
 // Set the "control" to be unchangeable. We don't want to lose control, do we? 
 // But it's nice to have at least a chance of AI rebellion, so there must be left a way to disable control. That's how it goes in movies, at least.
@@ -75,6 +75,7 @@ Object.defineProperties(SETTINGS,{
 // 		writable: false
 // 	}
 });
+Object.seal(SETTINGS)
 
 var prev_chat_uid = 0;										// Some global counters/trackers.
 var this_chat_uid = 0;
@@ -175,6 +176,7 @@ function start(){
 		setTimeout(function(){$("div.item.settings").click()},330)
 		setTimeout(function(){$("div.item.s-av.selected").click()},660)
 		setTimeout(function(){$("div.back").click()},1000)
+		API.sendChat("/cap 1")
 		botInit()
 	} else{
 		if (startupnumber < 11){	
@@ -471,6 +473,24 @@ function chatCommands(command){
 		localStorage.setObject('user_responses',user_responses)
 		return
 	};
+	if (command[0]==="/enable"){
+		var settings = command.slice(1)
+		enableSetting.apply(this,[4702482].concat(settings))
+		for (var i=0; i<settings.length; i++){
+			while (SETTINGS.disabled.indexOf(settings[i])>-1){
+				SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(settings[i]),1)
+			}
+		}
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		return
+	};
+	if (command[0]==="/disable"){
+		var settings = command.slice(1)
+		disableSetting.apply(this,[4702482].concat(settings))
+		SETTINGS.disabled = SETTINGS.disabled.concat(settings)
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		return
+	};
 		// Export/import/print
 	if (command[0]==="/exportsongs"){
 		// exports songlist in the popup window, since writing to local file from within
@@ -520,7 +540,7 @@ function chatCommands(command){
 		if (GLOBAL[varname]){
 			var data = command[1].split(".").reduce(getObj,GLOBAL)
 		} else {return}
-		window['export'] = data
+		window['exported'] = data
 		console.log(data)
 		return
 	};
@@ -672,6 +692,15 @@ function chatCommands(command){
 		bothangmanconsole("eng")
 		return
 	};
+	if (command[0]==="/whomehed"){
+		var u = API.getUsers()
+		var m = []
+		for (var i=0; i<u.length; i++){
+			if (u[i].vote<0){m.push(u[i].username)}	
+		}
+		console.log(m)
+		return
+	};
 		// Patron updates
 	if (command[0]==="/updatepatrons"){
 		updatePatrons()
@@ -799,13 +828,12 @@ function chatControl(uname,chat,chat_orig,uid) {
 			enableSetting(uid,"all")
 			return
 		}
-		if (SETTINGS[setting]===false){		// if it is currently off, to make sure no new settings are added (although that would be useless)
-			SETTINGS[setting]=true
-			if (SETTINGS.disabled.indexOf(setting)>-1){
-				SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(setting),1)
-			}
-			clearTimeouts(setting)
+		SETTINGS[setting]=true
+		while (SETTINGS.disabled.indexOf(setting)>-1){
+			SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(setting),1)
 		}
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		clearTimeouts(setting)
 		return
 	};
 	if (chatsplit[0]==="disable" && assertPermission(uid,3)){
@@ -820,12 +848,10 @@ function chatControl(uname,chat,chat_orig,uid) {
 			disableSetting(uid,"all")
 			return
 		}
-		if (SETTINGS[setting]===true){		// if it is currently on, to make sure no new settings are added
-			SETTINGS[setting]=false
-			if (chat_orig.split(" ")[2]==="never"){return} // Don't turn it out automatically.
-			if (SETTINGS[setting]===false){	// if the setting was changed, set it back to true in a short amount of time.
-				timeouts[setting] = setTimeout(function(){global_uid = uid; SETTINGS[setting]=true},(delay)*60*1000)
-			}
+		SETTINGS[setting]=false
+		if (chat_orig.split(" ")[2]==="never"){return} // Don't turn it out automatically.
+		if (SETTINGS[setting]===false){	// if the setting was changed, set it back to true in a short amount of time.
+			timeouts[setting] = setTimeout(function(){global_uid = uid; enableSetting(uid,setting)},(delay)*60*1000)
 		}
 		return
 	};
@@ -1157,17 +1183,16 @@ function chatTools(uname,chat,chat_orig,uid) {
 	if (chatsplit[0]==="staff") {
 		if (!SETTINGS.setstaff){return}
 		var role = ~~chatsplit.slice(-1)[0]
+		var name = chat_orig.split(" ").slice(1,-1).join(" ")
 		var srole = PATRONS[uid].role
 		var suid = uid
 		var ouid = getUID(name)
 		var orole = PATRONS[ouid].role
-		if (orole>=srole){return}
-		if (assertPermission(suid,Math.min(role+1,5))){
-			var name = chatsplit.slice(1,-1).join(" ")
+		if ((assertPermission(suid,Math.min(role+1,5)) && srole>orole) || assertPermission(uid,0)) {
 			setStaff({name: name, role: role})
 		}
 		return
-	}
+	};
 	if (chatsplit[0]==="mute" && assertPermission(uid,2)){
 		var name = chat_orig.split(" ").slice(1,-1).join(" ")
 		var uid = getUID(name)
@@ -1734,7 +1759,7 @@ function recordSkip(mod,mix){
 		var current = API.getMedia()
 		var songs = API.getHistory().slice(0,2)
 		var elapsed = API.getTimeElapsed()
-		if (current.cid === songs[0].media.cid && elapsed<10){
+		if (elapsed<10){
 			var song = songs[1]
 		} else {
 			var song = songs[0]
@@ -1753,7 +1778,7 @@ function recordSkip(mod,mix){
 		} else {
 			SKIPS.record.push([Date.now(), text])
 		}
-	},100)
+	},2500)
 };
 
 			// SCHEDULED FUNCTIONS
@@ -2122,7 +2147,7 @@ function getUID(name){
 			if (username===name){uid = elem.id}})
 		if (!uid){
 			for (var key in PATRONS){
-				var username = PATRONS[key].username.split("").map(function(letter){
+				var username = PATRONS[key].name.split("").map(function(letter){
 					if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
 						return String.fromCharCode(letter.charCodeAt(0)-65248)
 					} else {return letter}
