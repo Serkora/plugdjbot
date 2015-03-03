@@ -21,7 +21,7 @@ var global_uid = null									// global uid value to use in SETTINGS set functio
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
-// var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from localStorage.
+var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from localStorage.
 
 var mode = "normal";
 var state = "";
@@ -481,6 +481,7 @@ function chatCommands(command){
 				SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(settings[i]),1)
 			}
 		}
+		if (settings[0]==="all"){SETTINGS.disabled = []}
 		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
 		return
 	};
@@ -1147,7 +1148,7 @@ function chatTools(uname,chat,chat_orig,uid) {
 		return
 	};
 	if (chatsplit[0]==="skip" && (assertPermission(uid,2) || API.getDJ().id===uid)) {
-		if (chatsplit.length === 1){
+		if (chatsplit.length === 1 || +chatsplit[1]<=0){
 			if (Date.now() - SKIPS.last<5000){console.log("not so fast");return}
 			API.moderateForceSkip()
 			SKIPS.last = Date.now()
@@ -1170,7 +1171,7 @@ function chatTools(uname,chat,chat_orig,uid) {
 			API.sendChat("Entered time is longer than the song's duration.")
 			return
 		}
-		timeouts.skipmix = setTimeout(skipMix,(duration+5)*1000, API.getMedia().cid, duration, uname)
+		timeouts.skipmix = setTimeout(skipMix,duration*1000, API.getMedia().cid, duration, uname)
 		SKIPS.skipmixtime = Date.now() + duration*1000
 		var durchat = (duration/60)%1 === 0 ? duration/60 : (duration/60).toFixed(2)
 		API.sendChat("This song will be skipped in "+durchat+" minutes.")
@@ -2250,12 +2251,12 @@ function enoughToSkip(){
 function skipMix(songid, duration, name){
 	var id = API.getMedia().cid
 	clearTimeouts("skipmix")
+	SKIPS.skipmixtime = null
 	if (songid !== id) {
 		return
 	}
-	if (API.getTimeElapsed()>=duration){
+	if (API.getTimeElapsed()>=(duration-5)){
 		API.moderateForceSkip()
-		SKIPS.skipmixtime = null
 		recordSkip(name, duration)
 	}
 	return
