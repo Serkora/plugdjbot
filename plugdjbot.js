@@ -10,7 +10,7 @@ GLOBAL = this
 COMMAND_SYMBOL = "!"
 DELETE_COMMANDS = true
 BOT_USERID = 5433970
-BOT_ROOM = "na-pali"
+BOT_ROOM = "dvach"
 
 	// Global variables declaration.
 var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that can fully control the bot.
@@ -345,10 +345,7 @@ botIdle = function(){
 	API.on(API.CHAT, function(data){
 		if (data.message==="!botstart" && state==="idle" && assertPermission(uid,3)){
 			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
-			clearInterval(timeouts.localsave)
-			clearInterval(timeouts.dropped)
-			clearInterval(timeouts.chatcount1)
-			clearInterval(timeouts.chatcount2)
+			clearTimeouts("all")
 			botStart()
 		}
 	})
@@ -1930,24 +1927,18 @@ function clearTimeouts(type){
 	/* Clear the scheduled function of a specified type. */
 	if (!!timeouts[type]){
 		clearTimeout(timeouts[type])
+		clearInterval(timeouts[key])
 		delete timeouts[type]
+		return
 	}
-// 	if (!!timeouts.cycle && type==="cycle") {
-// 		clearTimeout(timeouts.cycle)
-// 		timeouts.cycle = null
-// 	}
-// 	if (!!timeouts.skip && type==="skip") {
-// 		clearTimeout(timeouts.skip)
-// 		timeouts.skip = null
-// 	}
-// 	if (!!timeouts.voting && type==="voting"){
-// 		clearTimeout(timeouts.voting)
-// 		timeouts.voting = null		
-// 	}
-// 	if (!!timeouts.sign && type==="sign"){
-// 		clearTimeout(timeouts.sign)
-// 		timeouts.sign = null		
-// 	}
+	if (type==="all"){
+		for (var key in timeouts){
+			clearTimeout(timeouts[key])
+			clearInterval(timeouts[key])
+		}
+		timeout = Object.create(null)
+	}
+	return
 };
 
 function proposalVoting(data){
