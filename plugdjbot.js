@@ -11,7 +11,6 @@ TO DO:
 3. Rework the 'lastpos' command and tons of unnecessary arrays it involves.
 4. Swearing filter.
 5. Song titles filtering/fixing.
-7. Expand the getUID function to allow event more freedom in the way 'name' is specified.
 8. Custom mute/ban times.
 */
 
@@ -965,6 +964,7 @@ chatTools = {
 	alternatives: function(){
 		this.dc = this.lastpos
 		this.lp = this.lastplayed
+		this.message = this.bugreport
 	}
 	, lastpos: function(uid, name, target/*, *target */){
 		/* 
@@ -1420,14 +1420,15 @@ chatFun = {
 			API.sendChat("You can't start the response with '/' or '!'")
 			return
 		}
-		if (command[0]==="!"){var command = command.slice(1)}
+		var command = command.toLowerCase()
+		if (command[0]==="!"){command = command.slice(1)}
 		if (command in chatUser){
 			API.sendChat("That command already exists")
 			return
 		}
 		var response = argumentsSlice(arguments,3)	
 		chatUser[command] = response
-		chatUser.comminput.push([name,command,response])
+		chatUser.comminput.push([new Date(), name, command, response])
 		chatCommands.savetolocalstorage(true)
 		ALLCOMMANDS.update()
 		return
@@ -1626,6 +1627,23 @@ function waitlistUpdate(){
 	return
 };
 
+function droppedUsers(){
+	/* 
+	Checks if any of the usernames in a previous (before wait_list_update event) wait list
+	are missing in the current wait list, also checking if that user is not a current dj.
+	If anyone is missing — writes down their username, last position, time and date object
+	*/
+	for (i = 0; i < wlpn.length; i++) {
+		if (wlcn.indexOf(wlpn[i])<0 && wlpn[i]!==API.getDJ().username) {
+			var date = new Date()
+			var hour = date.getHours()
+			var min = date.getMinutes()
+			dropped_users_list[wlpn[i]] = [i+1, hour, min, date]
+		}
+	}
+	return
+};
+
 function mehSkip(){
 	/* Skips the awful awful track. */
 	if (!(SETTINGS.mehskip)){return}
@@ -1700,23 +1718,6 @@ function statisticUpdate(){
 	return
 };		
 
-function droppedUsers(){
-	/* 
-	Checks if any of the usernames in a previous (before wait_list_update event) wait list
-	are missing in the current wait list, also checking if that user is not a current dj.
-	If anyone is missing — writes down their username, last position, time and date object
-	*/
-	for (i = 0; i < wlpn.length; i++) {
-		if (wlcn.indexOf(wlpn[i])<0 && wlpn[i]!==API.getDJ().username) {
-			var date = new Date()
-			var hour = date.getHours()
-			var min = date.getMinutes()
-			dropped_users_list[wlpn[i]] = [i+1, hour, min, date]
-		}
-	}
-	return
-};
-
 function mrazotaCheck(){
 	/* If the track is way too long while people are in queue — skips it. */
 	if (!(SETTINGS.mrazota)){return}
@@ -1742,8 +1743,15 @@ function sameArtist(){
 	song has played recently.
 	*/
 	if (!SETTINGS.sameartist){return}
+	var ql = API.getWaitList().length
+	if (ql<4){return}
+	var date = new Date()
+	var hrs = date.getHours()
+	if (hrs > 0 && hrs < 2){
+		chatControl.disable(4702482,'sameartist',420)
+	}
 	var artist = API.getMedia().author
-	var time = Date.now()
+	var time = date.getTime()
 	var dj = API.getDJ().username
 	var played = 0
 	for (var i=0; i<songlist.length; i++){
@@ -1752,7 +1760,7 @@ function sameArtist(){
 				API.sendChat("@"+dj+", That song has been played very recently. Please, be more diverse in your music choice.")
 				return
 			}
-			if ((time - songlist[i][5])<3*60*60*1000){
+			if ((time - songlist[i][5])<ql*4*60*1000){
  				played++
 			} 
 			if (played===2){
@@ -1807,12 +1815,12 @@ function toggleCycle(manual){
 	}
 	if (manual === "enable"){
 		API.moderateDJCycle(true)
-		chatControl("name","disable autocycle","disable autocycle",4702482)
+		chatControl.disable(4702482,'autocycle',1)
 		DJCYCLE = true
 	}
 	if (manual === "disable"){
 		API.moderateDJCycle(false)
-		chatControl("name","disable autocycle","disable autocycle",4702482)
+		chatControl.disable(4702482,'autocycle',1)
 		DJCYCLE = false
 	}
 	return
@@ -1952,7 +1960,7 @@ function checkStuck(){
 	If the song was stuck for more than ~15 seconds and couldn't have been skipped — calls itself in 30 minutes, by which
 	time either everything gets fixed, plug goes down or bot restarts. */
 	if (!API.getDJ() || songstuck>=7 || !SETTINGS.stuck){
-		setTimeout(checkStuck,30*60*1000)
+		setTimeout(checkStuck,10*60*1000)
 		songstuck = 0
 		return
 	}
@@ -2277,6 +2285,7 @@ function findInQueue(uid){
 function getUID(name){
 	var users = API.getUsers()
 	var uid
+	if (name[0]==="@"){var name = name.slice(1)}
 	var exactname = false
 	for (var i=0; i<name.length; i++){
 		if (name.charCodeAt(i)>65278 && name.charCodeAt(i)<65375){
@@ -2285,6 +2294,10 @@ function getUID(name){
 		}
 	}
 	if (!exactname){
+		var pattern = name.toLowerCase().replace(/[\s]+/g,"[\s]*").replace(/[eе]/g,"[eе]").replace(/[il]/g,"[il]").replace(/[сc]/g,"[cс]")
+		pattern = pattern.replace(/[oо]/g,"[oо]").replace(/[аa]/g,"[aа]").replace(/[tт]/g,"[tn]").replace(/[уy]/g,"[yу]")
+		pattern = pattern.replace(/[kк]/g,"[kк]").replace(/[hн]/g,"[hн]").replace(/[bв]/g,"[bв]").replace(/[xх]/g,"[xх]").replace(/[mм]/g,"[мm]")
+		pattern = new RegExp(pattern,'i')
 		users.forEach(function(elem){
 			var username = elem.username.split("").map(function(letter){
 				if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
@@ -2294,18 +2307,21 @@ function getUID(name){
 				} else {
 					return letter
 				}
-			}).join("")
-			if (username===name){uid = elem.id}})
+			}).join("").replace(/[\s]+/g,"")
+			if (pattern.test(username)){uid = elem.id}
+		})
 		if (!uid){
 			for (var key in PATRONS){
 				var username = PATRONS[key].name.split("").map(function(letter){
 					if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
 						return String.fromCharCode(letter.charCodeAt(0)-65248)
-					} else {return letter}
-				}).join("")
-				if (username===name) {
-					uid = PATRONS[key].id
-				}
+					} else if (letter.charCodeAt(0)==65279){
+						return ""
+					} else {
+						return letter
+					}
+				}).join("").replace(/[\s]+/g,"")
+				if (pattern.test(username)){uid = PATRONS[key].id}
 			}
 		}
 		return uid
@@ -2630,6 +2646,8 @@ function patronLeave(user){
 	if (PATRONS[user.id]){
 		PATRONS[user.id].lastseen = Date.now()
 		PATRONS[user.id].online = false
+		PATRONS[user.id].alarm = false
+		PATRONS[user.id].leave = [false, false]
 	}
 	return
 };
@@ -2858,7 +2876,7 @@ function Patron(id){
 	this.prevnames = []
 	this.role = 0
 	this.prole = 0
-	this.online = false
+	this.online = true
 	this.alarm = false
 	this.leave = [false, false]
 		// stats
