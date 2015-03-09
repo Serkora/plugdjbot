@@ -138,7 +138,7 @@ var ALLCOMMANDS = {
 		if (command in chatFun)		{return "Fun"}
 		if (command in chatGames)	{return "Games"}
 		if (command in chatVarious)	{return "Various"}
-		if (command in USERCOMMANDS){return "User"}
+		if (command in chatUser)	{return "User"}
 		return false
 	}
 }
@@ -177,8 +177,7 @@ var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks
 */ 					
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
-var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette',
-							'user_responses','user_comminput','user_commands', "EMOJIDICT"];
+var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette','chatUser',"EMOJIDICT"];
 
 // Voting variables
 var propvotes = null
@@ -581,6 +580,7 @@ chatCommands = {
 			var data = path.split(".").reduce(deepObject,GLOBAL)
 		} else {return}
 		window['exported'] = data
+		if (data instanceof Object){return}
 		if (data[0] instanceof Array){
 			data = data.map(function(elem){return elem.join(" ")})
 		}
