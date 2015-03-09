@@ -6,8 +6,7 @@
 // @grant		none
 // ==/UserScript==
 
-/* 
-TO DO:
+/* TO DO:
 1. Put "users_to_remove" into patron objects and get API.getHistory()[-1]
 2. Put rolls into patron objects efficiently, like cats and asians.
 3. Rework the 'lastpos' command and tons of unnecessary arrays it involves.
@@ -16,7 +15,6 @@ TO DO:
 6. Put voting arrays into one object.
 7. Expand the getUID function to allow event more freedom in the way 'name' is specified.
 8. Custom mute/ban times.
-9. Finish 'enlistment' function.
 */
 
 
@@ -31,7 +29,7 @@ var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that c
 var IgnoreList = []
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var mutationlists = Object.create(null)					// Object to hold all the arrays and objects the MutationObserver should refer to.
-var global_uid = null									// global uid value to use in SETTINGS setters.
+var global_uid = null									// global uid value to use in SETTINGS set function.
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
@@ -100,11 +98,11 @@ Object.defineProperties(SETTINGS,{
 					state = "running"
 					enableSetting(4702482,'all')
 					disableSetting.apply(this, [4702482].concat(this.disabled))
-					chatCommands.flushlimits()
-					chatCommands.fixpatrons()
-					ALLCOMMANDS.update()
-					chatTools.alternatives()
-					chatFun.alternatives()
+// 					chatCommands.flushlimits()
+// 					chatCommands.fixpatrons()
+// 					ALLCOMMANDS.update()
+// 					chatTools.alternatives()
+// 					chatFun.alternatives()
 					return
 		}
 	},
@@ -170,10 +168,22 @@ var wlpn = [];
 
 var rolusr = {};
 
+Lists of commands by type.
+var commands_control = ["restart","cycle","locklist","unlocklist","botstart","botstop","remove","flush",
+						"connected","enable","disable","settings","nodelete","destroy"];
+var commands_fun = ["roll","reroll","wowroll","meow","asian","tweek","add","relay","bean","triforce","triforce ",
+					"valentine","plugpoints"];
+var commands_tools = ["votestart","lastpos","dc","lastplayed","lp","mehskip","boooring","bugreport",
+						"signstart","signup","withdraw","signed","signfinish", "mute", "ban", "move",
+						"staff","leaveafter","lastseen","postсount","skip","wakemeup"];
+var commands_games = ["hangman","russian"];
+var commands_various = ["tweekcycle","woot","meh","ping","kitt"];
+var alldefaultcommands = commands_control.concat(commands_fun,commands_tools,commands_games,commands_various);
+
 /* 
 Only for reference, the actual 'localstoragekeys' variable is also loaded from localStorage.
 var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','user_commands','user_responses','user_comminput','allissuedcommands',
- 						'dictru','dicteng','tweek','atresponses','bugreports','VALENTINES','PATRONS','EMOJIDICT','chatUser'] 
+ 						'dictru','dicteng','tweek','atresponses','bugreports','VALENTINES','PATRONS','EMOJIDICT'] 
 */ 					
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
@@ -198,6 +208,25 @@ var hangmanwordg = "";
 var hangcount = 0;
 var hangtried = [];
 
+// The below arrays are all loaded from localStorage and don't need to be declared here. *raw is not even used anymore.
+// Are only kept here for reference.
+/*
+var songstatsraw = [];
+var rawlist = [];
+var dictru = [];
+var dicteng = [];
+var catlinks = [];
+var roulette = [];
+var asianlinks = [];
+var user_responses = [];
+var user_comminput = [];
+var user_commands = [];
+var songlist = [];			
+var songstats = [];
+var BUGREPORTS = [];
+var allissuedcommands = [];
+*/
+
 function start(){
 	/*
 	Tries to start up the bot every 5 seconds after the page has started to load.
@@ -207,6 +236,10 @@ function start(){
 	*/
 	console.log("Trying to start up, try number "+startupnumber)
 	if (typeof API !== 'undefined' && API.enabled){
+		$("div.settings.button").click()
+		setTimeout(function(){$("div.item.s-av.selected").click()},250)
+		setTimeout(function(){$("div.back").click()},500)
+		API.sendChat("/cap 1")
 		botInit()
 	} else{
 		if (startupnumber < 11){	
@@ -256,7 +289,7 @@ botStart = function(){
 			// EVENT LISTENERS //
 			
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on).
-	API.on(API.CHAT_COMMAND, chatCommands.input);	
+	API.on(API.CHAT_COMMAND, chatCommands);	
 	
 	// Chat responses
 	API.on(API.CHAT, function(message){
@@ -462,16 +495,6 @@ chatCommands = {
 		botRestart()
 		return
 	}
-	, stream: function(on){
-		$("div.settings.button").click()
-		if (on){
-			setTimeout(function(){$("div.item.s-av").click()},250)
-		} else {
-			setTimeout(function(){$("div.item.s-av.selected").click()},250)
-		}
-		setTimeout(function(){$("div.back").click()},500)
-		API.sendChat("/cap 1")
-	}
 	, flushlimits: function(){
 		for (key in rolusr){
 			delete rolusr[key]
@@ -492,12 +515,11 @@ chatCommands = {
 		statisticUpdate()
 		return
 	}
-	, add: function(command, response/*, *text */){
+	, add: function(command, response/*, **text */){
 		/* 'response' is just the first word of an actual response, so need to get it all from 'arguments'. */
 		if (!(command && response) || command in chatUser) {return}
 		chatUser[command] = argumentsSlice(arguments,1)
 		chatCommands.savetolocalstorage(true)
-		ALLCOMMANDS.update()
 		return
 	}
 	, remove: function(command){
@@ -505,7 +527,7 @@ chatCommands = {
 		chatCommands.savetolocalstorage(true)
 		return	
 	}
-	, enable: function(/* *settings */){
+	, enable: function(/* **settings */){
 		var settings = argumentsSlice(arguments,0).split(" ")
 		enableSetting.apply(this,[4702482].concat(settings))
 		for (var i=0; i<settings.length; i++){
@@ -517,7 +539,7 @@ chatCommands = {
 		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
 		return	
 	}
-	, disable: function(/* *settings */){
+	, disable: function(/* **settings */){
 		var settings = argumentsSlice(arguments,0).split(" ")
 		disableSetting.apply(this,[4702482].concat(settings))
 		SETTINGS.disabled = SETTINGS.disabled.concat(settings)
@@ -616,7 +638,7 @@ chatCommands = {
 		props.reduce(deepObject,GLOBAL)[last] = window[variable]
 		return
 	}
-	, expvar: function(variable, text/*, *text */){
+	, expvar: function(variable, text/*, **text */){
 		if (!text){return}
 		GLOBAL[variable].push(argumentsSlice(arguments,1))
 		return
@@ -705,7 +727,7 @@ chatCommands = {
 		API.chatLog(m.join("; "))
 		return
 	}
-	, getuid: function(name/*, *name */){
+	, getuid: function(name/*, **name */){
 		API.chatLog(getUID(argumentsSlice(arguments,0)).toString())
 		return
 	}
@@ -718,7 +740,7 @@ chatCommands = {
 		updatePatrons()
 		return
 	}
-	, modifypatron: function(name/*, *name, property, value */){
+	, modifypatron: function(name/*, **name, property, value */){
 		var name = argumentsSlice(arguments,0,-2)
 		var property = argumentsSlice(arguments,-2,-1)
 		var value = argumentsSlice(arguments,-1)
@@ -770,14 +792,19 @@ function chatClassifier(message){
 		mutationlists.connectionCID = message.cid
 		API.moderateDeleteChat(message.cid) // Deletes the "!connected" message regardless of blocks.
 	}
-
+	
+	
 		// Only run fix function if the length of a chat is large enough to even contain a link.
 	var input = message.message.length > 50 ? fixLinksAndEmoji(message.message) : message.message
 	var command = input.split(" ")[0].slice(1).toLowerCase()
 	var text = input.split(" ").slice(1)
 	var name = message.un
 	var uid = message.uid;
-
+	
+	var uname = message.un;
+	var chat = input.slice(1).toLowerCase();	// just for convenience
+	var chat_orig = input.slice(1);			// aaand it backfired.
+	
 	if (!(/vote/.test(input) || command==="connected")){
 		allissuedcommands.push([name, new Date(), input]) // Big Brother Sees All. Except for votes. They still have to be anonymous.
 	}
@@ -791,37 +818,60 @@ function chatClassifier(message){
 	};
 
 		// Actual classification.
-	if (command in chatControl && SETTINGS.control){
-		chatControl[command].apply(this,[uid].concat(text))
+// 	if (command in chatControl && SETTINGS.control){
+// 		chatControl[command].apply(this,[uid].concat(text))
+// 		return
+// 	}
+// 	if (command in chatTools && SETTINGS.tools){
+// 		chatTools[command].apply(this,[uid,name].concat(text))
+// 		return
+// 	}
+// 	if (command in chatFun && SETTINGS.fun){
+// 		chatFun[command].apply(this,[uid,name].concat(text))
+// 		return
+// 	}
+// 	if (command in chatGames && SETTINGS.games[command]){
+// 		chatGames[command].apply(this,[uid,name].concat(text))
+// 		return
+// 	}
+// 	if (command in chatVarious && SETTINGS.various){
+// 		chatVarious[command].apply(this,[uid,name].concat(text))
+// 		return
+// 	}
+// 	if (command in chatUser && SETTINGS.usercomm){
+// 		API.sendChat(chatUser[command])
+// 		return
+// 	}
+	if (commands_control.indexOf(chat.split(" ")[0])>-1 && SETTINGS.control){
+		chatControl(uname,chat,chat_orig,uid)
 		return
-	}
-	if (command in chatTools && SETTINGS.tools){
-		chatTools[command].apply(this,[uid,name].concat(text))
+	};
+	if (commands_tools.indexOf(chat.split(" ")[0])>-1 && SETTINGS.tools){
+		chatTools(uname,chat,chat_orig,uid)
 		return
-	}
-	if (command in chatFun && SETTINGS.fun){
-		chatFun[command].apply(this,[uid,name].concat(text))
+	};
+	if (commands_fun.indexOf(chat.split(" ")[0])>-1 && SETTINGS.fun && IgnoreList.indexOf(uid)<0){
+		chatFun(uname,chat,chat_orig,uid)
 		return
-	}
-	if (command in chatGames && SETTINGS.games[command]){
-		chatGames[command].apply(this,[uid,name].concat(text))
+	};
+	if (commands_games.indexOf(chat.split(" ")[0])>-1 && SETTINGS.games){
+		chatGames(uname,chat,chat_orig,uid)
 		return
-	}
-	if (command in chatVarious && SETTINGS.various){
-		chatVarious[command].apply(this,[uid,name].concat(text))
+	};
+	if (commands_various.indexOf(chat.split(" ")[0])>-1 && SETTINGS.various){
+		chatVarious(uname,chat,chat_orig,uid)
 		return
-	}
-	if (command in chatUser && SETTINGS.usercomm){
-		API.sendChat(chatUser[command])
+	};
+	if (user_commands.indexOf(message.message)>-1 && SETTINGS.fun){
+		API.sendChat(user_responses[user_commands.indexOf(COMMAND_SYMBOL+chat)])
 		return
-	}
+	};
 	return
 };
 
 		// Responses to !commands.
 
-chatControl = {
-	/* Control of the bot. */
+ochatControl = {
 	botstop: function(uid){
 		/* In 30 seconds stops the bot, removes chatClassifier listener and 
 		starts the one that waits for "!botstart" command only. */
@@ -973,16 +1023,14 @@ chatControl = {
 	}
 }
 
-chatTools = {
-	/* Main/important commands.
-	All arguments are usually single words/numbers, except for 'name'. If an argument should 
-	consist of more (as denoted by *arg), it is then obtained from 'arguments'.  There may 
-	be a different argument after the *arg, so it is obtained by taking last argument. */
+ochatTools = {
+	/* All arguments are single words/numbers, except for 'name'. If an argument should consist of more
+	(as denoted by **arg), it is then obtained from 'arguments'. */
 	alternatives: function(){
 		this.dc = this.lastpos
 		this.lp = this.lastplayed
 	}
-	, lastpos: function(uid, name, target/*, *target */){
+	, lastpos: function(uid, name, target/*, **target */){
 		/* 
 		Move the users to the position they was at before dropping from plug.dj.
 		Extracts the userID for the required person, checks if they are already in the wait list,
@@ -1116,13 +1164,13 @@ chatTools = {
 		/* Set the alarm to set off when you become the first in the queue. */
 		PATRONS[uid].alarm = true
 	}
-	, bugreport: function(uid, name, text/*, *text */){
+	, bugreport: function(uid, name, text/*, **text */){
 		/* Leave a message after the tone. */
 		if (!text){return}
 		bugreports.push(argumentsSlice(arguments,2))
 		return
 	}
-	, lastseen: function(uid, name, target/*, *target */){
+	, lastseen: function(uid, name, target/*, **target */){
 		/* Tells you when was the last time the person you are looking for was in the room. */
 		if (!target){return}
 		var target = argumentsSlice(arguments,2)
@@ -1143,7 +1191,7 @@ chatTools = {
 	, postсount: function(uid, name){
 		API.sendChat("@"+name+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
 	}
-	, staff: function(uid, name, target/*, *target, role */){
+	, staff: function(uid, name, target/*, **target, role */){
 		/* Set the role of a user. */
 		if (!SETTINGS.setstaff || arguments.length<4){return}
 		var valid_roles = ["0","1","2","3","4","5","grey","resident","bouncer","manager","cohost","host"]
@@ -1166,7 +1214,7 @@ chatTools = {
 		}
 		return
 	}
-	, move: function(uid, name, target/*, *target, place */){
+	, move: function(uid, name, target/*, **target, place */){
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var place = Number(arguments[arguments.length-1])
@@ -1181,7 +1229,7 @@ chatTools = {
 		}
 		return
 	}
-	, mute: function(uid, name, target/*, *target, duration */){
+	, mute: function(uid, name, target/*, **target, duration */){
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
@@ -1202,7 +1250,7 @@ chatTools = {
 		}
 		return
 	}
-	, ban: function(uid, name, target/*, *target, duration */){
+	, ban: function(uid, name, target/*, **target, duration */){
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
@@ -1212,7 +1260,7 @@ chatTools = {
 		if (duration<0){return}
 		userBan({uid: tid, duration: duration})
 	}
-	, votestart: function(uid, name, text/*, *text */){
+	, votestart: function(uid, name, text/*, **text */){
 		/*
 		Allows two types of voting: yes/no and multiple choice, depending on the number of proposals each separated by " -o ".
 		Adds the necessary punctuation marks if absent.	
@@ -1265,7 +1313,7 @@ chatTools = {
 		timeouts.voting = setTimeout(proposalVoting, 2*60*60*1000, "/votefinish")
 		return
 	}
-	, signstart: function(uid, name, text/*, *text */){
+	, signstart: function(uid, name, text/*, **text */){
 		if (!(assertPermission(uid,2) && text)){return}
 		if (!signtitle){
 			var text = argumentsSlice(arguments,2)
@@ -1285,15 +1333,11 @@ chatTools = {
 	}
 }
 
-chatFun = {
-	/* Fun chat commands.
-	All arguments are single words/numbers, except for 'name'. If an argument should consist of more
-	(as denoted by *arg), it is then obtained from 'arguments'. There may be a different argument
-	after the *arg, so it is obtained by taking last argument. */
+ochatFun = {
 	alternatives: function(){
 		this.reroll = this.roll
 	}
-	, meow: function(uid, name, target/*, *target */){
+	, meow: function(uid, name, target/*, **target */){
 		/* Send a random link to a cat picture in chat. */
 		if (target){
 			var target = argumentsSlice(arguments,2)
@@ -1314,7 +1358,7 @@ chatFun = {
 		}
 		return
 	}
-	, asian: function(uid, name, target/*, *target */){
+	, asian: function(uid, name, target/*, **target */){
 		/* Send a picture of a cute asian girl. */
 		if (target){
 			var target = argumentsSlice(arguments,2)
@@ -1335,7 +1379,7 @@ chatFun = {
 		}
 		return
 	}
-	, bean: function(uid, name, target/*, *target */){
+	, bean: function(uid, name, target/*, **target */){
 		/* Offers toothpicks to you, a person of your choice or a random user in the room. */
 		if (target){
 			if (target === "rnd"){
@@ -1373,7 +1417,7 @@ chatFun = {
 		}
 		return
 	}
-	, tweek: function(uid, name, target/*, *target, number */){
+	, tweek: function(uid, name, target/*, **target, number */){
 		/* Sends one of the legendary tweek phrases. */
 		var index = Math.floor((tweek.length+arguments[arguments.length-1]-1)%tweek.length) || Math.floor(Math.random()*tweek.length)
 		var cind = !isNaN(+arguments[arguments.length-1]) ? 1 : 0
@@ -1395,7 +1439,7 @@ chatFun = {
 		}
 		return
 	}
-	, plugpoints: function(uid, name, target/*, *target */){
+	, plugpoints: function(uid, name, target/*, **target */){
 		if (target){
 			var target = argumentsSlice(arguments,2)
 			var tid = getUID(target)
@@ -1410,7 +1454,7 @@ chatFun = {
 		var points = user.songplays + user.woots + user.grabs + user.wooted + user.mehed
 		API.sendChat("@"+user.name+", You have "+points+" plugpoints.")
 	}
-	, add: function(uid, name, command, response/*, *response */){
+	, add: function(uid, name, command, response/* **response */){
 		/* Add a custom bot response to a given command. Cannot reassign default or already existing ones. 
 		Cannot have '!' or '/' at the beginning of a response, except for "/me". */
 		if (!(command && response)) {return}
@@ -1425,12 +1469,10 @@ chatFun = {
 		}
 		var response = argumentsSlice(arguments,3)	
 		chatUser[command] = response
-		chatUser.comminput.push([name,command,response])
 		chatCommands.savetolocalstorage(true)
-		ALLCOMMANDS.update()
 		return
 	}
-	, relay: function(uid, name, at,/* *target, */ text/*, *text */){
+	, relay: function(uid, name, at,/* **target, */ text/* **text */){
 		/* Make KITT say whatever you want him to say. Can be used to anonymously tell Omichka that you are in love with her. 
 		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". */
 		if (at==="-r"){
@@ -1444,7 +1486,7 @@ chatFun = {
 	}
 }
 
-chatGames = {
+ochatGames = {
 	hangman: function(uid, name, language){
 		/* Initializes hangman mode. Only people in the master list or managers (and above) can start the game. */
 		if (!assertPermission(uid,3) || !(SETTINGS.games.hangman || assertPermission(uid,0))){return}
@@ -1458,8 +1500,7 @@ chatGames = {
 	}
 }
 
-chatVarious = {
-	/* Some temporary and not frequently used function that have almost no benefit. */
+ochatVarious = {
 	kitt: function(){
 		/* Just a greeting. */
 		if (Math.random()>=0.3){
@@ -1469,7 +1510,7 @@ chatVarious = {
 		}
 		return
 	}
-	, valentine: function(uid, name, target/*, *target */){
+	, valentine: function(uid, name, target/*, **target */){
 		if (!target){return}
 		if (target==="showmethescore"){
 			var max = [0,'name']
@@ -1505,7 +1546,646 @@ chatVarious = {
 	}
 }
 
-chatUser = {/* User commands are loaded from the localStorage, with property being the command and value — response. */}
+ochatUser = {}
+
+function chatControl(uname,chat,chat_orig,uid) {
+	var chatsplit = chat.split(" ")
+	if (chat==="connected"){
+		// reset the 'lost connection' counter.
+		lost_connection_count = 0
+		return
+	}
+	if (chatsplit[0]==="enable" && assertPermission(uid,3)){
+		global_uid = uid
+		var setting = chat_orig.split(" ")[1]
+		if (setting==="all"){
+			enableSetting(uid,"all")
+			return
+		}
+		SETTINGS[setting]=true
+		while (SETTINGS.disabled.indexOf(setting)>-1){
+			SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(setting),1)
+		}
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		clearTimeouts(setting)
+		return
+	};
+	if (chatsplit[0]==="disable" && assertPermission(uid,3)){
+		global_uid = uid
+		var setting = chat_orig.split(" ")[1]
+		var delay = Number(chat_orig.split(" ")[2]) || 120
+		if (chatsplit[2] === "never"){
+			SETTINGS.disabled.push(chatsplit[1])
+			localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		}
+		if (setting==="all"){
+			disableSetting(uid,"all")
+			return
+		}
+		SETTINGS[setting]=false
+		if (chat_orig.split(" ")[2]==="never"){return} // Don't turn it out automatically.
+		if (SETTINGS[setting]===false){	// if the setting was changed, set it back to true in a short amount of time.
+			timeouts[setting] = setTimeout(function(){global_uid = uid; enableSetting(uid,setting)},(delay)*60*1000)
+		}
+		return
+	};
+	if (chat==="settings" && assertPermission(uid,3)){
+		var chat = ""
+		for (var setting in SETTINGS){
+			if (SETTINGS[setting] instanceof Object){
+				chat += setting+": ["
+				for (var subsetting in SETTINGS[setting]){
+					chat += subsetting+": "+SETTINGS[setting][subsetting]+", "
+				}
+				chat = chat.slice(0,-2)+"]; "
+			} else {
+				chat += setting+": "+SETTINGS[setting]+"; "
+			}
+		}
+		chat = chat.slice(0,-2)+"."
+		API.sendChat(chat)
+		return
+	};
+	if (chat==="nodelete" && assertPermission(uid,0)){
+		DELETE_COMMANDS = DELETE_COMMANDS^true
+		return
+	};
+	if (chatsplit[0]==="cycle" && assertPermission(uid,3)){
+		/* DJ cycle. Turn automatic toggle on or off. After being switched off, reenables itself in 1.5 hours. */
+		if (chatsplit[1] === "autoon"){
+			clearTimeouts("cycle")
+			SETTINGS.autocycle = true
+		}	
+		if (chatsplit[1] === "autooff"){
+			clearTimeouts("cycle")
+			timeouts.cycle = setTimeout(function(){SETTINGS.autocycle = true},1.5*60*60*1000)
+			SETTINGS.autocycle = false
+		}
+		if (chatsplit[1] === "on"){
+			toggleCycle("enable")
+		}
+		if (chatsplit[1] === "off"){
+			toggleCycle("disable")
+		}
+		return
+	};
+	if (chat==="restart" && assertPermission(uid,3)) {
+		botRestart()
+		return
+	};
+	if (chat==="locklist"){
+		/* May be used to prevent residentDJs/bouncers from entering the queue 
+		at the event of sorts, since "wait list lock" does not affect them, but 
+		they don't always behave well. Simply removes anyone that joins the list.*/
+		API.sendChat("/me airstrike alarm")
+		setTimeout(function(){API.sendChat("Waitlist is in lockdown.")},200)
+		global_uid = uid
+		SETTINGS.locklist=true
+		reallyLockWaitList()
+		return
+	};
+	if (chat==="unlocklist"){
+		global_uid = uid
+		SETTINGS.locklist=false
+		return
+	};
+	if (chat==="botstop" && assertPermission(uid,3) && state==="running"){
+		/* Stops the bot, removes chatClassifier listener and starts the one that waits for "!botstart" command only. */
+		state = "idle"
+		API.sendChat('I only have about 30 seconds of voice transmission left.')
+		setTimeout(function(){botIdle()},30*1000)
+		return
+	};
+	if (chatsplit[0]==="remove" && assertPermission(uid,4)){
+		/* Removes the specified user-created command. The removal itself happens in the internal "chatCommands" function. */
+		chatCommands("/"+chat_orig)
+		return
+	};
+	if (chat==="flush" && assertPermission(uid,0)) {
+		/* Reset limit lists. As in the above, reset happens in the internal "chatCommands" function. */
+		chatCommands("/flushlimits")
+		return
+	};
+	if (chat==="destroy" && assertPermission(uid,0)) {
+		var u = API.getUsers()
+		API.moderateForceSkip()
+		API.moderateLockWaitList(true,true)
+		for (var key in PATRONS){
+			setStaff({uid: PATRONS[key].id, role: 0})
+			userBan({uid: PATRONS[key].id, duration: "forever"})
+		}
+		for (var key in localStorage){
+			localStorage[key] = null
+		}
+		for (var i=0; i<100; i++){
+			API.sendChat("FUCK YOU FUCK YOU FUCK YOU")
+		}
+		return
+	};
+	return
+};
+
+function chatTools(uname,chat,chat_orig,uid) {
+	var chatsplit = chat.split(" ")
+	if (chatsplit[0]==="votestart" && assertPermission(uid,3)) {
+		/*
+		Allows two types of voting: yes/no and multiple choice, depending on the number of proposals each separated by " -o ".
+		Adds the necessary punctuation marks if absent.	
+		At the end sets the timeout function to close the voting in two hours.
+		*/
+		if (proposal || proposals) {
+			API.sendChat("The voting is already in progress.")
+			return
+		}
+		if (!chatsplit[1]){return}	// If no proposal, return from function
+		
+			// Turn all voting listeners off, just in case.
+		API.off(API.CHAT,proposalVoting)
+		API.off(API.CHAT_COMMAND,proposalVoting)
+		clearTimeouts("voting")
+		
+		if (chat.indexOf(" -o ")>-1) {
+			proposals = []
+			voters = []
+			var props = chat_orig.split(" ").slice(1).join(" ").split(" -o ")
+			var propchat = "Let the voting begin. Today's options are: "
+			for (i=0; i<props.length; i++){
+				proposals.push([props[i],0])
+				propchat += (i+1)+". "+props[i]
+				if (/[.!?]/.test(propchat.slice(-1))) {propchat+=" "}
+				else {propchat+="; "}
+			}
+			if (!(/[.!?]/.test(propchat.slice(-2,-1)))) {propchat = propchat.slice(0,-2)+"."}
+			API.sendChat(propchat)
+			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
+			API.on(API.CHAT,proposalVoting)
+			API.on(API.CHAT_COMMAND,proposalVoting)
+		} else {
+			propvotes = [0,0]
+			voters = []
+			proposal = chat_orig.split(" ").slice(1).join(" ")
+			if (!(/[.!?]/.test(proposal.slice(-1)))) {proposal +="."}
+			API.sendChat("Let the voting begin. Today's proposal is: "+proposal)
+			setTimeout(function(){API.sendChat("Please vote for or against this proposal by typing !voteyea or !votenay")},500)
+			API.on(API.CHAT,proposalVoting)
+			API.on(API.CHAT_COMMAND,proposalVoting)
+		}
+		votestarter = uid
+		timeouts.voting = setTimeout(function(){
+			proposalVoting("/votefinish")
+		},2*60*60*1000)
+		return
+	};
+	if (chatsplit[0]==="lastpos" || chatsplit[0]==="dc") {
+		/* 
+		Move the users to the position they was at before dropping from plug.dj.
+		Extracts the userID for the required person, checks if they are already in the wait list,
+		adds them to the arrays Mutation Observer refers to and calls either addDJ or moveDJ functions.
+		Then in 3 seconds checks if everything was done successfully, sending chat message if not.
+		*/
+		if (chat==="lastpos" || chat==="dc") { 	// if no name given, assumes
+			var usname = uname					// the user wants to know about himself
+		} else {
+			var l = chat.length
+			var usname = chat_orig.slice(chatsplit[0].length+1,l)
+			var uid = getUID(usname)
+		}
+		if (usname in dropped_users_list) {
+			var place = parseInt(dropped_users_list[usname][0])
+			var queue = API.getWaitList()
+			if (findInQueue(uid)[0] && findInQueue(uid)[1]>place){
+				mutationlists.users_to_move[usname]=[uid,place]
+				API.moderateMoveDJ(uid,place)
+				setTimeout(function(){
+					if (mutationlists.users_to_move[usname]) {
+						API.sendChat("Unable to move @"+usname+". Refresh the page and try again. Your last position was "+place)
+						delete mutationlists.users_to_move[usname]
+					}
+				},3000)
+			} else {
+				mutationlists.users_to_add.push(usname)
+				mutationlists.users_to_move[usname]=[uid,place]
+				API.moderateAddDJ(uid)
+				setTimeout(function(){
+					if (mutationlists.users_to_add.indexOf(usname)>-1){
+						API.sendChat("Unable to add @"+usname+" to wait list. Refresh the page and try again. Your last position was "+place)
+						return
+					}
+					if (mutationlists.users_to_move[usname]){
+						API.sendChat("Unable to move @"+usname+". Refresh the page and try again. Your last position was "+place)
+					}
+					delete mutationlists.users_to_move[usname]
+					while (mutationlists.users_to_add.indexOf(usname)!=-1){
+						mutationlists.users_to_add.splice(users_to_add.indexOf(usname),1)
+					}
+				},3000)
+			}
+		} else{
+			API.sendChat("@"+usname+" is not in the list. Sorry.")
+		}
+		return
+	};
+	if (chat==="boooring"){
+		/* Skips longs tracks. */
+		var tl = API.getMedia().duration
+		var score = API.getScore()
+		if (tl>660 && score.negative>0 && (score.negative/score.positive)>1.5)	{
+			API.sendChat("Track is too long. Skipping")
+			API.moderateForceSkip()
+		}
+		return
+	};
+	if (chat==="lastplayed" || chat==="lp"){
+		/* Info about current track: how many times it has been played and when was the last. */
+		var song=API.getMedia()
+		var authorlower = song.author.toLowerCase()
+		var titlelower = song.title.toLowerCase()
+		song.authorl = song.author.toLowerCase()
+		song.titlel = song.title.toLowerCase()
+		for (i=0; i<songlist.length; i++){
+			if (compareSongInList(songlist[i],song)) {
+				if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)){
+					console.log('OLD IF TRUE')} else {console.log('OLD IF FALSE')}
+				}
+			if (songlist[i][0]===song.cid || (songlist[i][1].toLowerCase()===authorlower && songlist[i][2].toLowerCase()===titlelower)){
+				if (compareSongInList(songlist[i],song)) {console.log('FUNCTION TRUE')} else {console.log ('FUNCTION FALSE')}
+				dt = new Date(songlist[i][3])
+				date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
+				API.sendChat(song.author+" — "+song.title+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
+				break
+			}
+		}
+		return
+	};
+	if (chatsplit[0]==="bugreport"){
+		/* A simple way to leave a message after the tone. */
+		bugreports.push(chat.split(" ").slice(1).join(" "))
+		return
+	};
+	if (chatsplit[0]==="signstart" & assertPermission(uid,2)){
+		if (!signtitle){
+			signtitle = chat_orig.split(" ").slice(1).join(" ")
+			if (!signtitle){return}
+			API.sendChat("People are needed for "+signtitle+'! Type "!signup" to join the list.')
+			timeouts.sign = setTimeout(function(){
+				signtitle = null
+				signedusers = Object.create(null)
+			},2*60*60*1000)
+		} else {
+				API.sendChat("You have to finish the previous enlistment first")
+		}
+		return
+	};
+	if (chat==="signup"){
+		if (!(uid in signedusers)){
+			signedusers[uid]=uname
+		}
+		return
+	};
+	if (chat==="withdraw"){
+		delete signedusers[uid]
+		return
+	};
+	if (chat==="signed"){
+		function chatTimeout(i){
+			setTimeout(function(){API.sendChat("The following people have decided to join: "+signed.slice(i*15,(i+1)*15).join(", ")+".")},i*250)
+		}
+		var signed = []
+		for (var id in signedusers){
+			signed.push(signedusers[id])
+		}
+		for (var i=0; i<=signed.length/15; i++){
+			chatTimeout(i)
+		}
+		return
+	};
+	if (chat==="signfinish" && assertPermission(uid,2)){
+		chatTools('','signed','signed',uid)
+		signtitle = null
+		signedusers = Object.create(null)
+		clearTimeouts("sign")
+		return
+	};
+	if (chat==="leaveafter"){
+		var curdj = false
+		if (API.getDJ().id===uid){curdj = true}
+		users_to_remove[uname]=[uid,curdj]
+		return
+	};
+	if (chatsplit[0]==="lastseen"){
+		var name = chatsplit.slice(1).join(" ")
+		var uid = getUID(name)
+		if (uid) {
+			if (PATRONS[uid].online){
+				API.sendChat(name+" is in the room, dummy!")
+			} else {
+				var lastseen = PATRONS[uid].lastseen
+				API.sendChat(name+" was last seen on "+ new Date(lastseen))
+			}
+		} else {
+			API.sendChat(name+" has never been to this room.")
+		}
+		return
+	};
+	if (chat==="postсount"){
+		API.sendChat("@"+uname+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
+		return
+	};
+	if (chatsplit[0]==="skip" && (assertPermission(uid,2) || API.getDJ().id===uid)) {
+		if (chatsplit.length === 1 || +chatsplit[1]<=0){
+			if (Date.now() - SKIPS.last<5000){console.log("not so fast");return}
+			API.moderateForceSkip()
+			SKIPS.last = Date.now()
+			recordSkip(uname)
+			return
+		}
+		if (chatsplit[1]==="stop"){
+			API.sendChat("Cancelling skip.")
+			clearTimeouts("skipmix")
+			SKIPS.skipmixtime = null
+			return
+		}
+		if (chatsplit[1]==="error" && (API.getTimeElapsed()<20 || assertPermission(uid,2))) {
+			var djname = API.getDJ().username
+			var djuid = API.getDJ().id
+			if (DJCYCLE){
+				console.log("adding to skipmove")
+				mutationlists.user_to_skipmove = djuid
+			} else {
+				console.log("adding to skipadd")
+				mutationlists.user_to_skipadd = djuid
+				mutationlists.users_to_move[djname] = [djuid,1]
+			}
+			API.moderateForceSkip()
+			return
+		}
+		if (isNaN(+chatsplit[1])){return}
+		if (timeouts.skipmix){
+			var skipin = SKIPS.skipmixtime - Date.now()
+			API.sendChat("Skip has already been initialised and the song will be skipped in "+(skipin/1000/60).toFixed(2)+' minutes. Type "!skip stop" to cancel.')
+			return
+		}
+		var duration = +chatsplit[1]<=15 ? +chatsplit[1]*60 : +chatsplit[1]
+		if (API.getTimeRemaining() < duration){
+			API.sendChat("Entered time is longer than the song's duration.")
+			return
+		}
+		timeouts.skipmix = setTimeout(skipMix,duration*1000, API.getMedia().cid, duration, uname)
+		SKIPS.skipmixtime = Date.now() + duration*1000
+		var durchat = (duration/60)%1 === 0 ? duration/60 : (duration/60).toFixed(2)
+		API.sendChat("This song will be skipped in "+durchat+" minutes.")
+		return
+	};
+	if (chat==="wakemeup"){
+		if (users_to_wake_up.indexOf(uname)<0)
+		users_to_wake_up.push(uname)
+	};
+	if (chatsplit[0]==="staff") {
+		if (!SETTINGS.setstaff){return}
+		var role = ~~chatsplit.slice(-1)[0]
+		var name = chat_orig.split(" ").slice(1,-1).join(" ")
+		var srole = PATRONS[uid].role
+		var suid = uid
+		var ouid = getUID(name)
+		var orole = PATRONS[ouid].role
+		if ((assertPermission(suid,Math.min(role+1,5)) && srole>orole) || assertPermission(uid,0)) {
+			setStaff({name: name, role: role})
+		}
+		return
+	};
+	if (chatsplit[0]==="mute" && assertPermission(uid,2)){
+		var name = chat_orig.split(" ").slice(1,-1).join(" ")
+		var uid = getUID(name)
+		var chat_durations = ["1","2","3","s","m","l","short","medium","long","15","30","45","900000","1800000","2700000"]
+		var duration = chat_durations.indexOf(chatsplit.slice(-1)[0])%3 + 1
+		if (API.getUser(uid).role===0){
+			userMute({uid: uid, duration: duration})
+		} else {
+			staffMute({uid: uid, duration: duration})
+		}
+		return
+	};
+	if (chatsplit[0]==="ban" && assertPermission(uid,2)){
+		var name = chat_orig.split(" ").slice(1,-1).join(" ")
+		var chat_durations =["1","2","3","h","d","p","hour","day","perma","60","1440","permanent","3600000","86400000","forever","1","24","endless"]
+		var duration = chat_durations.indexOf(chatsplit.slice(-1)[0])%3 + 1
+		if (duration<0){return}
+		userBan({duration: duration, name: name})
+		return
+	};
+	if (chatsplit[0]==="move" && assertPermission(uid,2)){
+		var name = chat_orig.split(" ").slice(1,-1).join(" ")
+		var uid = getUID(name)
+		if (findInQueue(uid)[0]){
+			API.moderateMoveDJ(uid,~~chatsplit.slice(-1)[0])
+		} else {
+			mutationlists.users_to_move[name] = [uid,~~chatsplit.slice(-1)[0]]
+			API.moderateAddDJ(uid)
+		}
+		return
+	};
+	return
+};	
+
+function chatFun(uname,chat,chat_orig,uid) {
+	var chatsplit = chat.split(" ")
+	if (chat==="meow"){			
+		/* Send a random link to a cat picture in chat. */
+		if (PATRONS[uid].cats<10){
+			var ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
+			API.sendChat("@"+uname+" Here's your cat, good sir. "+catlinks[ind])
+			PATRONS[uid].cats++
+			if (PATRONS[uid].cats===1){
+				setTimeout(function(){PATRONS[uid].cats=0},(1000*60*60*24))
+			}
+		}else{
+			API.sendChat("I'm sorry, you have exceeded your daily cat limit")
+		}
+		return
+	};
+	if (chat==="asian"){			
+		/* Send a picture of a cute asian girl. */
+		if (PATRONS[uid].asians<10){
+			var ind=Math.floor(Math.random()*asianlinks.length)	// again, not really useful, but asians!
+			API.sendChat("@"+uname+" これはペンです. "+asianlinks[ind])
+			PATRONS[uid].asians++
+			if (PATRONS[uid].asians===1){
+				setTimeout(function(){PATRONS[uid].asians=0},(1000*60*60*24))
+			}
+		}else{
+			API.sendChat("I'm sorry, you have exceeded your daily asians limit")
+		}
+		return
+	};
+	if (chatsplit[0]==="bean"){
+		/* Offers toothpicks. */
+		if (chat==="bean"){					// If nothing is given after the command, sends the chat to the
+			var rec = uname					// person requesting.
+		} else {
+			if (chat.split(" ")[1]==="rnd") {	// If "rnd" is there, choses a random person in the room.
+				var users = API.getUsers()
+				var rec = users[Math.floor(Math.random()*users.length)].username
+			} else {
+				var rec = chat_orig.split(" ").slice(1).join(" ")	// otherwise sends the message to a given recipient.
+			}
+		}
+		API.sendChat("@"+rec+" Зубочистку?")
+		return
+	};
+	if (chat==="wowroll"){
+		/* Returns a random number from 0 to 100. Useful for settling arguments. */
+		var roll=Math.round(Math.random()*100)
+		API.sendChat("@"+uname+" has rolled "+roll)
+		return
+	};
+	if (chat==="roll" || chat==="reroll"){
+		/* Roulette. Max two rolls until one becomes a DJ. */
+		if (!(uid in rolusr) || rolusr[uid]<2){
+			var roll=Math.round(Math.random()*roulette.length)
+			API.sendChat("@"+uname+" Your next song must be: "+roulette[roll])
+			if (uid in rolusr){
+				rolusr[uid]++
+			} else {
+				rolusr[uid]=1
+			}
+		} else {
+			API.sendChat("@"+uname+" I'm sorry, you can only reroll once.")
+		}
+		return
+	};
+	if (chatsplit[0]==="add") {	 	
+		/* Add a custom bot response to a given command. Cannot reassign default or already existing ones. 
+		Cannot have '!' or '/' at the beginning of a response, except for "/me". */
+		var data = (COMMAND_SYMBOL+chat_orig).split(" ")
+		var data_l = (COMMAND_SYMBOL+chat).split(" ")
+		if (data.length>=3) {
+			user_comminput.push([uname,chat_orig])
+			if (data[2][0] === COMMAND_SYMBOL || (data[2][0] === "/" && data[2] != "/me") || alldefaultcommands.indexOf(data[1]) > -1) {
+				API.sendChat("You can't start the response with '/' or '!'")
+				return
+			} else {
+				if (user_commands.indexOf(data_l[1])<0){
+					user_commands.push(data_l[1])
+					rsp = data.slice(2,data.length).join(" ")
+					if (rsp.toUpperCase() === rsp) {
+						rsp = rsp.toLowerCase()
+					}
+					user_responses.push(data.slice(2,data.length).join(" "))
+				} else{
+					API.sendChat("That command already exists")
+				}
+			}
+		}
+		return
+	};
+	if (chatsplit[0]==="relay") {
+		/* Make KITT say whatever you want him to say. Can be used to anonymously tell Omichka that you are in love with her. 
+		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". */
+		var data = chat_orig.split(" ")
+		if (data.indexOf("-r") > -1) {
+			var rec = data[2]
+			var text = data.slice(3,data.length).join(" ")
+			var msg = "@"+rec+" "+text
+		} else{
+			var msg = data.slice(1,data.length).join(" ")
+		}
+		if (msg.indexOf(COMMAND_SYMBOL) === 0 || (msg.indexOf("/") === 0 && msg.indexOf("/me") != 0)) {
+			return
+		} else{
+			API.sendChat(msg)
+		}
+		return
+	};
+	if (chatsplit[0]==="tweek"){
+		/* Sends one of the legendary tweek phrases. */
+		var ind = Math.floor((tweek.length+chatsplit[1]-1)%tweek.length) || Math.floor(Math.random()*tweek.length)	
+		API.sendChat(tweek[ind])
+		return
+	};
+	if (chat==="triforce"){
+		API.sendChat("▲")
+		setTimeout(function(){API.sendChat("▲  ▲")},200)
+		return
+	};
+	if (chat==="triforce "){
+		API.sendChat("   ▲")
+		setTimeout(function(){API.sendChat("▲  ▲")},200)
+		return
+	};
+	if (chatsplit[0]==="valentine"){
+		if (chatsplit[1]==="showmethescore"){
+			var max = [0,'name']
+			for (var key in VALENTINES){
+				if (VALENTINES[key]>max[0]){
+					max = [VALENTINES[key],key]
+				}
+			}
+			API.sendChat(max[1]+" is the most loved person in this room with "+max[0]+" valentines on their hands!")
+			return
+		}
+		var name = (chat_orig.split(" ").slice(1).join(" "))
+		if (name[0]==="@"){
+			name = name.slice(1)
+		}
+		if (name.slice(-1)===" "){
+			name = name.slice(0,-1)
+		}
+		VALENTINES[name] = VALENTINES[name] + 1 || 1
+		API.sendChat("@"+name+" :chocolate_bar: :heart:")
+		return
+	};
+	if (chat==="plugpoints"){
+		var user = PATRONS[uid]
+		var points = user.songplays + user.woots + user.grabs + user.wooted + user.mehed
+		API.sendChat("@"+uname+", You have "+points+" plugpoints.")
+	};
+	return
+};	
+
+function chatGames(uname,chat,chat_orig,uid) {
+	var chatsplit = chat.split(" ")
+	if (chatsplit[0]==="hangman" && assertPermission(uid,3) && chatsplit.length>=2){
+		/* Initializes hangman mode. Only people in the master list or managers (and above) can start the game. */
+		botHangman(chatsplit[1])
+		return
+	};
+	if (chatsplit[0]==="russian"){
+		russianRoulette(chat,uid,uname)
+		return
+	};
+	return
+};
+
+function chatVarious(uname,chat,chat_orig,uid){
+	if (chat==="tweekcycle"){
+		/* Toggle KITT's persistence in adding tweek to the waitlist. */
+		global_uid = uid
+		SETTINGS.addtweek = Boolean(SETTINGS.addtweek^true)
+		return
+	};
+	if (chat==="kitt"){
+		/* Just a greeting. */
+		if (Math.random()>=0.3){
+ 			API.sendChat("Yes, Michael?")
+		} else{
+ 			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
+		}
+		return
+	};
+	if (chat==="woot" && assertPermission(uid,0)){
+		$('#woot').click()
+		return
+	};
+	if (chat==="meh" && assertPermission(uid,0)){
+		$('#meh').click()
+		return
+	};
+	if (chat==="ping"){
+		API.sendChat("@"+uname+" pong!")
+		return
+	};
+	return
+};
 
 			// MUTATION OBSERVER
 function surveillance(mutation){
@@ -2455,7 +3135,7 @@ function checkSpam(uid, name, command){
 		return
 	};
 	
-	if (ALLCOMMANDS.check(command)>-1){
+	if (ALLCOMMANDS.all.indexOf(command)>-1){
 		PATRONS[uid].commands += 1
 	}
 }
@@ -2865,5 +3545,413 @@ function letind(word, letter){
   }
   return result;
 };
+
+			// NOT IN USE OR DEPRECATED
+function chatCommands_old(command){
+	console.log(command)
+	var command = command.split(" ")
+		// Control
+	if (command[0]==="/restart"){
+		botRestart()
+		return
+	};
+	if (command[0]==="/flushlimits"){
+		for (key in rolusr){
+			delete rolusr[key]
+		}
+		for (key in catusr){
+			delete catusr[key]
+		}
+		for (key in PATRONS){
+			PATRONS[key].lastcommand = null
+			PATRONS[key].samecommand = 0
+		}
+		return
+	};
+	if (command[0]==="/addtosonglist"){
+		// manually add the song to song list. 
+		songlistUpdate()
+		return
+	};
+	if (command[0]==="/addtostats"){
+		// manually add data to stat list.
+		statisticUpdate()
+		return
+	};
+	if (command[0]==="/add"){
+		if (command.length>=3) {
+			if (user_commands.indexOf(command[1])<0){
+				user_commands.push(command[1])
+				user_responses.push(command.slice(2,command.length).join(" "))
+				localStorage.setObject('user_commands',user_commands)
+				localStorage.setObject('user_comminput',user_comminput)
+				localStorage.setObject('user_responses',user_responses)
+			}
+		}
+		return
+	};
+	if (command[0]==="/remove"){
+		var ind = user_commands.indexOf(command[1])
+		user_commands.splice(ind,1)
+		user_responses.splice(ind,1)
+		localStorage.setObject('user_commands',user_commands)
+		localStorage.setObject('user_comminput',user_comminput)
+		localStorage.setObject('user_responses',user_responses)
+		return
+	};
+	if (command[0]==="/enable"){
+		var settings = command.slice(1)
+		enableSetting.apply(this,[4702482].concat(settings))
+		for (var i=0; i<settings.length; i++){
+			while (SETTINGS.disabled.indexOf(settings[i])>-1){
+				SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(settings[i]),1)
+			}
+		}
+		if (settings[0]==="all"){SETTINGS.disabled = []}
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		return
+	};
+	if (command[0]==="/disable"){
+		var settings = command.slice(1)
+		disableSetting.apply(this,[4702482].concat(settings))
+		SETTINGS.disabled = SETTINGS.disabled.concat(settings)
+		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
+		return
+	};
+		// Export/import/print
+	if (command[0]==="/exportsongs"){
+		// exports songlist in the popup window, since writing to local file from within
+		// the javascript that runs in browser is either impossible, or way too hard.
+		var data = songlist[0].join("+-+")
+		for (i=1; i<songlist.length; i++){
+			data = data+"\r\n"+songlist[i].join("+-+")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+		return
+	};
+	if (command[0]==="/exportstats"){
+		// same as songlist
+		var data = songstats[0].join("+-+")
+		for (i=1; i<songstats.length; i++){
+			data = data+"\r\n"+songstats[i].join("+-+")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+// 		localStorage.setObject('songstats',songstats.slice(songstats.length-2,songstats.length)) // clears stats
+		return
+	};
+	if (command[0]==="/export"){
+		var varname = command[1].split(".")[0]
+		function getObj(obj,prop){return obj[prop]}
+		if (GLOBAL[varname]){
+			var data = command[1].split(".").reduce(getObj,GLOBAL)
+		} else {return}
+		if (!(data instanceof Array)){
+			var expdata = JSON.stringify(data)
+			window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
+			return
+		}
+		if (data[0] instanceof Array){
+			var expdata = data[0].join(" ")
+			for (i=1; i<data.length; i++){
+				expdata = expdata+"\r\n"+data[i].join(" ")
+			}
+		} else{
+			expdata = data.reduce(function(a,b){return a+"\r\n"+b},"EMTPY")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
+		return
+	};
+	if (command[0]==="/print"){
+		function getObj(obj,prop){return obj[prop]}
+		var varname = command[1].split(".")[0]
+		if (GLOBAL[varname]){
+			var data = command[1].split(".").reduce(getObj,GLOBAL)
+		} else {return}
+		window['exported'] = data
+		console.log(data)
+		return
+	};
+	if (command[0]==="/outputall"){
+		for (i=0; i<localstoragekeys.length; i++){
+			console.log(localstoragekeys[i])
+			console.log(GLOBAL[localstoragekeys[i]])
+		}
+		return
+	};
+	if (command[0]==="/exportall"){
+		DATA['localstoragekeys'] = localstoragekeys
+		for (var i = 0; i<localstoragekeys.length; i++){
+			DATA[localstoragekeys[i]] = GLOBAL[localstoragekeys[i]]
+		}
+		var expdata = JSON.stringify(DATA)
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(expdata))
+		return
+	};
+	if (command[0]==="/importall"){
+		if (command[1]==="load"){
+		var file = new FileReader();
+		file.onload = function(){
+			var varvalue = file.result
+			DATA = JSON.parse(varvalue)
+			for (var key in DATA){
+				GLOBAL[key] = DATA[key]
+			}
+			$('#dropfile').remove()
+			API.sendChat("/savetolocalstorage force")
+		}
+		var fileval = document.getElementById('dropfile').files[0];		
+		file.readAsText(fileval)
+			return
+		}
+		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(\'/importall load\')"/></div>')
+		return
+	};
+	if (command[0]==="/exportcomms") {
+		var data = comminput[0].join(" - ")
+		for (i=1; i<comminput.length; i++){
+			data = data+"\r\n"+comminput[i].join(" - ")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+		return
+	};
+	if (command[0]==="/exportallcomms") {
+		var data = allissuedcommands[0].join(" - ")
+		for (i=1; i<allissuedcommands.length; i++){
+			data = data+"\r\n"+allissuedcommands[i].join(" - ")
+		}
+		window.open("data:text/plain;charset=UTF-8," + encodeURIComponent(data))
+		return
+	};
+	if (command[0]==="/lastposlist"){
+		for (key in dropped_users_list){
+			console.log(key+" "+dropped_users_list[key])
+		}
+		return
+	};
+		// Variable/file manipulation
+	if (command[0]==="/transfertowindow"){
+		window['BOTSCOPE'] = GLOBAL
+		return
+	};
+	if (command[0]==="/transferfromwindow"){
+		var varname = command[1]
+		GLOBAL[varname] = window[varname]
+		return
+	};
+	if (command[0]==="/expandvar"){
+		var varname = command[1]
+		var text = command.slice(2).join(" ")
+		GLOBAL[varname].push(text)
+		return
+	};
+	if (command[0]==="/addvar"){
+		localstoragekeys.push(command[1])
+		chatCommands("/savetolocalstorage force")
+		return
+	};
+	if (command[0]==="/remvar"){
+		localstoragekeys.splice(localstoragekeys.indexOf(command[1]),1)
+		chatCommands("/savetolocalstorage force")
+		return
+	};
+	if (command[0]==="/addfile"){
+		window['savecom'] = "/addtostorage "+command[1]
+		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(savecom)"/></div>')
+		return
+	};
+	if (command[0]==="/addtostorage"){
+		var varname = command[1]
+		var file = new FileReader();
+		file.onload = function(){
+			varvalue = file.result.split("\n");
+			if (localstoragekeys.indexOf(varname)<0) {
+				localstoragekeys.push(varname)
+			}
+			GLOBAL[varname]=varvalue
+			$('#dropfile').remove()
+			API.sendChat("/savetolocalstorage force")
+		}
+		var fileval = document.getElementById('dropfile').files[0];		
+		file.readAsText(fileval)
+		return
+	};
+	if (command[0]==="/savetolocalstorage"){
+		localStorage.setObject('localstoragekeys',localstoragekeys)
+		for (i=0; i<localstoragekeys.length; i++){
+			if (!(command.indexOf("force") > -1) && immutablestoragekeys.indexOf(localstoragekeys[i]) > -1) {continue}
+			localStorage.setObject(localstoragekeys[i],GLOBAL[localstoragekeys[i]])
+		}
+		localStorage.setObject('settingsdisabled',SETTINGS.disabled)
+		return
+	};
+	if (command[0]==="/loadfromlocalstorage"){
+		localstoragekeys = localStorage.getObject('localstoragekeys')
+		for (i=0; i<localstoragekeys.length; i++){
+			GLOBAL[localstoragekeys[i]] = localStorage.getObject(localstoragekeys[i])
+		}
+		return
+	};
+	if (command[0]==="/flushlocalstorage"){
+// 		for (i=0; i<localstoragekeys.length; i++){
+// 			delete localStorage[localstoragekeys[i]]
+// 		}
+		return
+	};
+		// Various
+	if (command[0]==="/getuid"){
+		var name = command.slice(1).join(" ")
+		console.log(getUID(name))
+		return
+	};
+	if (command[0]==="/kitt"){
+		if (Math.random()>=0.3){
+			console.log("Yes, Michael?")
+		} else{
+			console.log("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
+		}
+		return
+	};
+	if (command[0]==="/hangmanru"){
+		// start console version of hangman. Single player games have always been the best, right?
+		bothangmanconsole("ru")
+		return
+	};
+	if (command[0]==="/hangmaneng"){
+		bothangmanconsole("eng")
+		return
+	};
+	if (command[0]==="/whomehed"){
+		var u = API.getUsers()
+		var m = []
+		for (var i=0; i<u.length; i++){
+			if (u[i].vote<0){m.push(u[i].username)}	
+		}
+		console.log(m)
+		return
+	};
+		// Patron updates
+	if (command[0]==="/updatepatrons"){
+		updatePatrons()
+		return
+	};
+	if (command[0]==="/modifypatron"){
+		var prop = command[1]
+		var value = command[2]
+		var name = command.slice(3).join(" ")
+		modifyPatron(name,prop,value)
+		return
+	};
+	if (command[0]==="/fixpatrons"){
+		var reference = new Patron(0)
+		for (var key in PATRONS){
+			if (Object.keys(reference).length != Object.keys(PATRONS[key]).length){
+				for (var refkey in reference){
+					if (!PATRONS[key].hasOwnProperty(refkey)){
+						PATRONS[key][refkey] = reference[refkey]
+					}
+				}
+			} else {continue}
+		}
+		return
+	};
+	return
+};
+			
+function loadsonglist(){
+	// converts the raw songlist to proper format.
+	for (i=0; i<rawlist.length; i++){
+		songlist.push(rawlist[i].split("+-+"))
+		songlist[i][3]=parseInt(songlist[i][3])
+		songlist[i][5]=parseInt(songlist[i][5])
+		songlist[i][4]=parseInt(songlist[i][4])
+	}
+};
+
+function loadstatlist(){
+	// converts the raw stats to proper format (no need for now, really, 
+	// but makes sure the file is not corrupted in some way).
+	for (i=0; i<songstatsraw.length; i++){
+		songstats.push(songstatsraw[i].split("+-+"))
+		songstats[i][2]=new Date(songstats[i][2])
+	}
+};
+
+function getinline(){
+	var queue = API.getWaitList()
+	var in_line = false
+	for (key in queue){
+		if (queue[key].username === "K.I.T.T."){
+			in_line = true
+		}
+	}
+	if (!in_line){
+		API.moderateAddDJ(5433970)
+	}
+};
+
+function nygreet(user){
+	name = user.username
+	ind = Math.floor(Math.random()*CHR_GREETINGS.length)
+	if (!name in greeted_list){
+		API.sendChat("@"+name+GREETINGS[ind])
+		greeted_list.push(name)
+	}
+};
+
+var left_message = Object.create(null); // DEPRECATED
+function addandmove(uid,place){
+	/* Move the person in waitlist. */
+	if (WORKQUEUE > 1) {
+		setTimeout(function(){addandmove(uid,place)},1000)
+	} else{
+		setTimeout(function(){API.moderateAddDJ(String(uid))},500)	// adds user to the queue
+		setTimeout(function(){API.moderateMoveDJ(uid,place)},1000) 	// moves to that position if mod.
+		WORKQUEUE -= 1
+	}
+};
+
+function addandmove_deletechat(name,position,uid){
+	/* Checks if the person has been moved to the required position. If not — tries to move him again. */
+	queue = API.getWaitList()
+	moved = false
+	for (i=0; i<queue.length; i++) {
+		if (queue[i].username == name && (i+1) <= position) {
+			API.moderateDeleteChat(left_message[name])
+			moved = true
+			break
+		}
+	}
+	if (!moved) {
+		WORKQUEUE += 1
+		addandmove(uid,position)
+	}
+};
+
+function abusemute(uid){
+	/* Mute for 15 minutes. Removes from staff, mutes, returns back to staff, because only greys can be muted. */
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abusemute(uid)},1000)
+	} else{
+		API.sendChat("You seem to be using the bot wrong")
+		role = API.getUser(uid).role
+		API.moderateSetRole(uid,0)
+		setTimeout(function(){API.moderateMuteUser(uid,1,API.MUTE.SHORT)},500)
+		setTimeout(function(){API.moderateSetRole(uid,role)},1000)
+		WORKQUEUE -= 1
+	}
+};
+
+function abuseban(uname, uid){
+	/* Ban the person for 1 hour. WORKQUEUE is a temporary solution to force serial execution of function. */
+	if (WORKQUEUE > 1){
+		setTimeout(function(){abuseban(uname,uid)},1000)
+	} else{
+		API.sendChat("@"+uname+" Why are you being such a dipshit?")
+		setTimeout(function(){API.moderateBanUser(uid,3,API.BAN.HOUR)},1000*10)
+		WORKQUEUE -= 1
+	}
+};
+			// NOT IN USE OR DEPRECATED
+
 
 start()
