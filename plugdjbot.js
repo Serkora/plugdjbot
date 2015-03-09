@@ -8,15 +8,11 @@
 
 /* 
 TO DO:
-1. Put "users_to_remove" into patron objects and get API.getHistory()[-1]
-2. Put rolls into patron objects efficiently, like cats and asians.
 3. Rework the 'lastpos' command and tons of unnecessary arrays it involves.
 4. Swearing filter.
 5. Song titles filtering/fixing.
-6. Put voting arrays into one object.
 7. Expand the getUID function to allow event more freedom in the way 'name' is specified.
 8. Custom mute/ban times.
-9. Finish 'enlistment' function.
 */
 
 
@@ -27,6 +23,7 @@ BOT_USERID = 5433970
 BOT_ROOM = "dvach"
 
 	// Global variables declaration.
+var STATE
 var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that can fully control the bot.
 var IgnoreList = []
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
@@ -35,10 +32,9 @@ var global_uid = null									// global uid value to use in SETTINGS setters.
 var DJCYCLE												// DJ Cycle state.
 var PATRONS = Object.create(null)						// Contains custom user-objects
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
+var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
 // var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from localStorage.
 
-var mode = "normal";
-var state
 // What type of commands to respond to or actions to take.
 var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true,
 				autocycle: true, mrazota: true, sameartist: true, setstaff: true,
@@ -97,7 +93,7 @@ Object.defineProperties(SETTINGS,{
 					localStorage.setObject('startuptimes',times)
 					API.off()
 					clearTimeouts(this,Object.keys(timeouts))
-					state = "running"
+					STATE = "running"
 					enableSetting(4702482,'all')
 					disableSetting.apply(this, [4702482].concat(this.disabled))
 					chatCommands.flushlimits()
@@ -160,15 +156,12 @@ mutationlists.user_to_skipadd = null
 mutationlists.user_to_skipmove = null
 mutationlists.connectionCID = null
 
-var users_to_remove = Object.create(null);
 var dropped_users_list = Object.create(null);	// list of users disconnected while in a queue. Associative array 
 												// with 'key' being username. Holds position and time.
 var wlc = [];	
 var wlcn = [];		// wait list arrays. Previous and new (after wait_list_update
 var wlp = [];		// event). ...n only holds usernames instead of json objects
 var wlpn = [];
-
-var rolusr = {};
 
 /* 
 Only for reference, the actual 'localstoragekeys' variable is also loaded from localStorage.
@@ -178,18 +171,6 @@ var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
 var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette','chatUser',"EMOJIDICT"];
-
-// Voting variables
-var propvotes = null
-var proposal = null
-var proposals = null
-var tiedproposals = null
-var voters = null
-var votestarter = null
-
-// Signing
-var signtitle = null
-var signedusers = Object.create(null)
 
 // Games
 var hangmanword = "";
@@ -286,23 +267,24 @@ botStart = function(){
 	/* Check if anyone has left while in a queue. 
 	Counts the number of people in the queue and toggles DJ cycle if needed.
 	If djlock is enabled — removes everyone from the list.
-	Wakes up people that are first in the wait list, if they have set an alarm. */
+	Wakes up people that are first in the wait list, if they have set an alarm. 
+	Removes the last person in the queue if they've asked to. */
 	API.on(API.WAIT_LIST_UPDATE, waitlistUpdate);
 	API.on(API.WAIT_LIST_UPDATE, toggleCycle);
 	API.on(API.WAIT_LIST_UPDATE, reallyLockWaitList);
 	API.on(API.WAIT_LIST_UPDATE, wakeUp);
+	API.on(API.WAIT_LIST_UPDATE, removeFromList);
 	
 	/* On DJ advance check if he is in the dropped_users_list list to prevent !lastpos abuse
 	Updates scrobble list, song length stats, checks if the song is absurdly long while 
-	people are in a queue, adds tweek if she's not in the list, removes the person if needed or 
-	tags him as "played" and updates songplays counter of a user. */
+	people are in a queue, adds tweek if she's not in the list, tags users as "played"
+	and updates songplays/score counters of a user. */
 	API.on(API.ADVANCE, checkDJ);
 	API.on(API.ADVANCE, songlistUpdate);
 	API.on(API.ADVANCE, statisticUpdate);
 	API.on(API.ADVANCE, mrazotaCheck);
 	API.on(API.ADVANCE, sameArtist);
 	API.on(API.ADVANCE, addTweek);
-	API.on(API.ADVANCE, removeFromList);
 	API.on(API.ADVANCE, tagPlayed);
 	API.on(API.ADVANCE, patronPlayed);
 	API.on(API.ADVANCE, patronScore);
@@ -359,13 +341,13 @@ botStart = function(){
 };
 
 botIdle = function(){
-	state = "idle"
+	STATE = "idle"
 	API.off(API.CHAT)
 	disableSetting(4702482,'autocycle','mehskip','mrazota')
 	
 	console.log("idling...")
 	API.on(API.CHAT, function(data){
-		if (data.message==="!botstart" && state==="idle" && assertPermission(data.uid,3)){
+		if (data.message==="!botstart" && STATE==="idle" && assertPermission(data.uid,3)){
 			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 			clearTimeouts("all")
 			botStart()
@@ -472,14 +454,12 @@ chatCommands = {
 		API.sendChat("/cap 1")
 	}
 	, flushlimits: function(){
-		for (key in rolusr){
-			delete rolusr[key]
-		}
 		for (key in PATRONS){
 			PATRONS[key].lastcommand = null
 			PATRONS[key].samecommand = 0
 			PATRONS[key].cats = 0
 			PATRONS[key].asians = 0
+			PATRONS[key].rolls = 0
 		}
 		return
 	}
@@ -753,7 +733,7 @@ chatCommands = {
 		chatCommands.remvar("user_comminput")
 		chatCommands.savetolocalstorage(true)
 	}
-}
+};
 
 			// USER CHAT
 function chatClassifier(message){
@@ -825,8 +805,8 @@ chatControl = {
 	botstop: function(uid){
 		/* In 30 seconds stops the bot, removes chatClassifier listener and 
 		starts the one that waits for "!botstart" command only. */
-		if (assertPermission(uid,3) && state==="running"){
-			state = "idle"
+		if (assertPermission(uid,3) && STATE === "running"){
+			STATE = "idle"
 			API.sendChat('I only have about 30 seconds of voice transmission left.')
 			setTimeout(botIdle,30*1000)
 		}
@@ -838,9 +818,13 @@ chatControl = {
 		}
 		return
 	}
-	, settings: function(uid){
+	, settings: function(uid, setting){
 		/* Prints the list of settings and their status. */
 		if (!assertPermission(uid,3)){return}
+		if (setting){
+			var val = setting.split(".").reduce(deepObject,SETTINGS)
+			if (val != undefined){API.sendChat(setting+": "+val); return}
+		}
 		var chat = ""
 		for (var setting in SETTINGS){
 			if (SETTINGS[setting] instanceof Object){
@@ -971,7 +955,7 @@ chatControl = {
 		}
 		return
 	}
-}
+};
 
 chatTools = {
 	/* Main/important commands.
@@ -1107,9 +1091,7 @@ chatTools = {
 	}
 	, leaveafter: function(uid, name){
 		/* Get kicked out of a queue at the end of you track. */
-		var curdj = false
-		if (API.getDJ().id===uid){curdj = true}
-		users_to_remove[name]=[uid,curdj]
+		PATRONS[uid].leave = [true, API.getDJ().id===uid]
 		return
 	}
 	, wakemeup: function(uid, name){
@@ -1219,7 +1201,7 @@ chatTools = {
 		At the end sets the timeout function to close the voting in two hours.
 		*/
 		if (!assertPermission(uid,3)){return}
-		if (proposal || proposals) {
+		if (VOTING.proposal || VOTING.proposals) {
 			API.sendChat("The voting is already in progress.")
 			return
 		}
@@ -1235,58 +1217,82 @@ chatTools = {
 			
 		if (text.indexOf(" -o ")>-1) {
 				// Multiple choice
-			proposals = []
-			voters = []
+			VOTING.proposals = []
+			VOTING.voters = []
 			var props = text.split(" -o ")
-			var propchat = "Let the voting begin. Today's options are: "
+			VOTING.propchat = "Let the voting begin. Today's options are: "
 			for (i=0; i<props.length; i++){
-				proposals.push([props[i],0])
-				propchat += (i+1)+". "+props[i]
-				if (/[.!?]/.test(propchat.slice(-1))) {propchat += " "}
-				else {propchat+="; "}
+				VOTING.proposals.push([props[i],0])
+				VOTING.propchat += (i+1)+". "+props[i]
+				if (/[.!?]/.test(VOTING.propchat.slice(-1))) {VOTING.propchat += " "}
+				else {VOTING.propchat+="; "}
 			}
-			if (!(/[.!?]/.test(propchat.slice(-2,-1)))) {propchat = propchat.slice(0,-2)+"."}
-			API.sendChat(propchat)
+			if (!(/[.!?]/.test(VOTING.propchat.slice(-2,-1)))) {VOTING.propchat = VOTING.propchat.slice(0,-2)+"."}
+			API.sendChat(VOTING.propchat)
 			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		} else {
 				// Yes/no
-			propvotes = [0,0]
-			voters = []
-			proposal = text
-			if (!(/[.!?]/.test(proposal.slice(-1)))) {proposal += "."}
-			API.sendChat("Let the voting begin. Today's proposal is: "+proposal)
+			VOTING.propvotes = [0,0]
+			VOTING.voters = []
+			VOTING.proposal = text
+			if (!(/[.!?]/.test(VOTING.proposal.slice(-1)))) {VOTING.proposal += "."}
+			API.sendChat("Let the voting begin. Today's proposal is: "+VOTING.proposal)
 			setTimeout(function(){API.sendChat("Please vote for or against this proposal by typing !voteyea or !votenay")},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		}
-		votestarter = uid
+		VOTING.votestarter = uid
 		timeouts.voting = setTimeout(proposalVoting, 2*60*60*1000, "/votefinish")
 		return
 	}
+	, voteties: function(uid, name){
+		if (!(assertPermission(uid,3) || VOTING.votestarter === uid)){return}
+		if (!VOTING.tiedproposals){return}
+		chatTools.votestart(uid, name, VOTING.tiedproposals.join(" -o "))
+		setTimeout(function(){delete VOTING.tiedproposals},5000)
+	}
+	, votehalt: function(uid){
+		if (!assertPermission(uid,4)){return}
+		var s1 = VOTING.signtitle
+		var s2 = VOTING.signedusers
+		VOTING = Object.create(null)
+		if (s1 || s2){VOTING.signtitle = s1; VOTING.signedusers = s2}
+		API.off(API.CHAT, proposalVoting)
+		API.off(API.CHAT_COMMAND, proposalVoting)
+		clearTimeouts("voting")
+	}
 	, signstart: function(uid, name, text/*, *text */){
 		if (!(assertPermission(uid,2) && text)){return}
-		if (!signtitle){
+		if (!VOTING.signtitle){
 			var text = argumentsSlice(arguments,2)
-			signtitle = text
-			API.sendChat('People are needed for '+signtitle+'! Type "!signup" to join the list.')
+			VOTING.signtitle = text
+			VOTING.signedusers = Object.create(null)
+			API.sendChat('People are needed for '+VOTING.signtitle+'! Type "!signup" to join the list.')
 			timeouts.sign = setTimeout(function(){
-				API.off(API.chat, enlistment)
-				signtitle = null
-				signedusers = Object.create(null)
+				API.off(API.CHAT, enlistment)
+				delete VOTING.signtitle
+				delete VOTING.signedusers
 			},2*60*60*1000)
 		} else {
-				API.sendChat("You have to finish the previous enlistment first.")
+				API.sendChat("You have to finish the current enlistment first.")
 		}
 		API.on(API.CHAT, enlistment)
 		return
 
 	}
-}
+	, signhalt: function(uid){
+		if (!assertPermission(uid,3)){return}
+		delete VOTING.signtitle
+		delete VOTING.signedusers
+		API.off(API.CHAT, enlistment)
+		clearTimeouts('sing')
+	}
+};
 
 chatFun = {
-	/* Fun chat commands.
+	/* Entertaining chat commands.
 	All arguments are single words/numbers, except for 'name'. If an argument should consist of more
 	(as denoted by *arg), it is then obtained from 'arguments'. There may be a different argument
 	after the *arg, so it is obtained by taking last argument. */
@@ -1360,14 +1366,10 @@ chatFun = {
 	}
 	, roll: function(uid, name){
 		/* Roulette. Max two rolls until one becomes a DJ. */
-		if (!(uid in rolusr) || rolusr[uid]<2){
+		if (PATRONS[uid].rolls < 2){
 			var roll=Math.round(Math.random()*roulette.length)
 			API.sendChat("@"+name+" Your next song must be: "+roulette[roll])
-			if (uid in rolusr){
-				rolusr[uid]++
-			} else {
-				rolusr[uid]=1
-			}
+			PATRONS[uid].rolls++
 		} else {
 			API.sendChat("@"+name+" I'm sorry, you can only reroll once.")
 		}
@@ -1442,7 +1444,7 @@ chatFun = {
 		API.sendChat(text)
 		return
 	}
-}
+};
 
 chatGames = {
 	hangman: function(uid, name, language){
@@ -1456,7 +1458,7 @@ chatGames = {
 		russianRoulette(uid, name, argument)
 		return
 	}
-}
+};
 
 chatVarious = {
 	/* Some temporary and not frequently used function that have almost no benefit. */
@@ -1503,9 +1505,9 @@ chatVarious = {
 		SETTINGS.addtweek = Boolean(SETTINGS.addtweek^true)
 		return
 	}
-}
+};
 
-chatUser = {/* User commands are loaded from the localStorage, with property being the command and value — response. */}
+chatUser = {/* User commands are loaded from the localStorage, with property being the command and value — response. */};
 
 			// MUTATION OBSERVER
 function surveillance(mutation){
@@ -1598,6 +1600,7 @@ function surveillance(mutation){
 		}
 		return
 	}
+	return
 };
 
 function createEye(){
@@ -1605,6 +1608,7 @@ function createEye(){
 	var config = {childList: true}
 	Eye = new MutationObserver(surveillance)
 	Eye.observe(target,config)
+	return
 };
 
 			// ON-EVENT FUNCTIONS
@@ -1619,6 +1623,7 @@ function waitlistUpdate(){
 		droppedUsers()
 	}
 	wlpn = wlcn
+	return
 };
 
 function mehSkip(){
@@ -1631,6 +1636,7 @@ function mehSkip(){
 			setTimeout(function(){API.sendChat("@"+djname+" Вы киберунижены.")},500)
 		}
 	}
+	return
 };
 
 function songlistUpdate(){
@@ -1665,17 +1671,17 @@ function songlistUpdate(){
 	if (!found) {
 		songlist.push([song.cid, song.author, song.title, Date.now(), 1, Date.now()])
 	}
+	return
 };
 
 function checkDJ(object){
-	/* removes current dj from left users and rolled users lists, if present */
+	/* Removes current dj from left users list and resets rolls count. */
 	if (!('dj' in object)){return}
 	if (object.dj.username in dropped_users_list) {
 		delete dropped_users_list[object.dj.username]
 	}
-	if (object.dj.id in rolusr) {
-		delete rolusr[object.dj.id]
-	}
+	PATRONS[object.dj.id].rolls = 0
+	return
 };
 
 function statisticUpdate(){
@@ -1691,6 +1697,7 @@ function statisticUpdate(){
 	var freq = chatsstat/((time - songstats[songstats.length-1][2])/60000)
 	songstats.push([dur,queue,time,freq])
 	chatsstat = 0
+	return
 };		
 
 function droppedUsers(){
@@ -1707,6 +1714,7 @@ function droppedUsers(){
 			dropped_users_list[wlpn[i]] = [i+1, hour, min, date]
 		}
 	}
+	return
 };
 
 function mrazotaCheck(){
@@ -1717,12 +1725,14 @@ function mrazotaCheck(){
 	if (dur >= 6000 && queue > 1) {
 		API.moderateForceSkip()
 	}
+	return
 };
 
 function addTweek(data){
 	if (!findInQueue(5121031)[0] && SETTINGS.addtweek && data.dj.id!=5121031){
 		API.moderateAddDJ('5121031')
 	}
+	return
 };
 
 function sameArtist(){
@@ -1751,6 +1761,7 @@ function sameArtist(){
 			}
 		}
 	}
+	return
 };
 
 function reallyLockWaitList(){
@@ -1760,67 +1771,51 @@ function reallyLockWaitList(){
 			API.moderateRemoveDJ(q[i].id)
 		}
 	}
+	return
 };
 
 function removeFromList(){
-	setTimeout(function(){
-		for (var key in users_to_remove){
-			var user = users_to_remove[key]
-			if (user[1] && API.getDJ().id!=user[0]){
-				API.moderateRemoveDJ(user[0])
-				delete users_to_remove[key]
-			}
-		}
-	},500)
+	var uid = API.getWaitList().slice(-1)[0].id
+	if (PATRONS[uid].leave[1]){
+		API.moderateRemoveDJ(uid)
+		PATRONS[uid].leave = [false, false]
+	}
+	return
 };
 
 function tagPlayed(){
-	var user = API.getDJ().username
-	if (users_to_remove[user]){
-		users_to_remove[user][1]=true
+	var uid = API.getDJ().id
+	if (PATRONS[uid].leave[0]){
+		PATRONS[uid].leave[1] = true
 	}
+	return
 };
 
 function toggleCycle(manual){
-	/* 
-	Turns DJ cycle on or off depending on wait list length. Called after every WAIT_LIST_UPDATE event. 
-	"manual" argument is passed when called	from chat function. "button.on" and "button.off" seem to be 
-	in the wrong places, but that's plug.dj we are talking about, you can't honestly expect them to do
-	everything properly. Or maybe I'm just missing the point of calling the buttons the other way around. 
-	*/
+	/* Turns DJ cycle on or off depending on wait list length. Called after every WAIT_LIST_UPDATE event. 
+	"manual" argument is passed when called	from chat. */
 	if (SETTINGS.autocycle){
 		var queue = API.getWaitList().length
 		if (queue>14 && DJCYCLE!=false){
-// 			$('#room-bar').click()
-// 			setTimeout(function(){$("button.on")[0].click()},500)
-// 			setTimeout(function(){$('#room-bar').click()},1000)
 			API.moderateDJCycle(false)
 			DJCYCLE = false
 		}
 		if (queue<10 && DJCYCLE!=true){
-// 			$('#room-bar').click()
-// 			setTimeout(function(){$("button.off")[0].click()},500)
-// 			setTimeout(function(){$('#room-bar').click()},1000)
 			API.moderateDJCycle(true)
 			DJCYCLE = true
 		}
 	}
 	if (manual === "enable"){
-// 		$('#room-bar').click()
-// 		setTimeout(function(){$("button.off")[0].click()},250)
-// 		setTimeout(function(){$('#room-bar').click()},500)
 		API.moderateDJCycle(true)
 		chatControl("name","disable autocycle","disable autocycle",4702482)
 		DJCYCLE = true
 	}
 	if (manual === "disable"){
-// 		$('#room-bar').click()
-// 		setTimeout(function(){$("button.on")[0].click()},250)
-// 		setTimeout(function(){$('#room-bar').click()},500)
 		API.moderateDJCycle(false)
 		chatControl("name","disable autocycle","disable autocycle",4702482)
 		DJCYCLE = false
 	}
+	return
 };
 
 function updateScore(){
@@ -1835,6 +1830,7 @@ function updateScore(){
 	SCORE.grab = score.grabs
 	SCORE.meh = score.negative
 	SCORE.saved = false
+	return
 };
 
 function wakeUp(){
@@ -1877,6 +1873,7 @@ function recordSkip(mod,mix){
 			SKIPS.record.push([Date.now(), text])
 		}
 	},2500)
+	return
 };
 
 			// SCHEDULED FUNCTIONS
@@ -1889,6 +1886,7 @@ function clearDroppedUsers(){
 			delete dropped_users_list[key]
 		}
 	}
+	return
 };
 
 function catLimit(uname){
@@ -1901,14 +1899,15 @@ function asianLimit(uname){
 	delete asnusr[uname]
 };
 
-function clearIssued(chat,uid){
+function clearIssued(command,uid){
 	/* Clears issuedcommands array. */
 	setTimeout(function(){
-		if (PATRONS[uid].lastcommand === chat.split(" ")[0]) {
+		if (PATRONS[uid].lastcommand === command) {
 			PATRONS[uid].lastcommand = null
 			PATRONS[uid].samecommand = 0
 		}
 	},2*60*1000);
+	return
 };
 
 function checkConnection(){
@@ -1917,7 +1916,7 @@ function checkConnection(){
 	properly connected (can't send, receive and delete chats), the counter won't be reset and after
 	reaching a limit the page will refresh.
 	*/
-	if (lost_connection_count===2){
+	if (lost_connection_count===4){
 		botRestart()
 		return
 	}
@@ -1926,7 +1925,6 @@ function checkConnection(){
 		// whether that's a coincidence. If the song is still stuck — restarts regardless of chat.
 		lost_connection_count++
 		setTimeout(function(){checkConnection()},20*1000)
-		return
 	}
 	if (getChatRate('short')===0){
 		lost_connection_count++
@@ -1940,15 +1938,12 @@ function checkConnection(){
 			}
 		},5000)
 	}
+	return
 };
 
 function resetChatCounter(n){
-	if (n===1){
-		chatsglob[0]=[Date.now(),0]
-	}
-	if (n===2){
-		chatsglob[1]=[Date.now(),0]
-	}
+	chatsglob[n-1]=[Date.now(),0]
+	return
 };
 
 function checkStuck(){
@@ -1978,11 +1973,11 @@ function checkStuck(){
 		setTimeout(checkStuck,2000)
 		return
 	}
-	
+	return
 };
 
 			// SUPPORTING FUNCTIONS
-function deepObject(object,property){if (object[property]){return object[property] = object[property]}}
+function deepObject(object,property){if (object[property]){return object[property] = object[property]}};
 
 function argumentsSlice(object, start, stop){
 	/* Recursive slice of 'arguments' object to join the necessary properties into one string. 
@@ -1995,7 +1990,7 @@ function argumentsSlice(object, start, stop){
 	} else {
 		return object[start]
 	}
-}
+};
 			
 function compareSongInList(songinlist, songplaying){
 	/* Compares the currently playing song to the one in list to find if it had been already played. Currently not in use. */
@@ -2032,14 +2027,13 @@ function proposalVoting(data){
 		var uid = data.uid
 		var uname = data.un
 	} catch(e){var chat=[""];var uid=0}				// Makes it possible to call this function from chat and as a /command
-	
 		// Single proposal.
 	if (chat[0].toLowerCase()==="!voteyea"){
-		if (voters.indexOf(uid)<0){
-			voters.push(uid)
-			propvotes[0]++
-			if (voters.length%5===0){
-				setTimeout(function(){API.sendChat(voters.length+" people have voted!")},1000)
+		if (VOTING.voters.indexOf(uid)<0){
+			VOTING.voters.push(uid)
+			VOTING.propvotes[0]++
+			if (VOTING.voters.length%5===0){
+				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
@@ -2047,11 +2041,11 @@ function proposalVoting(data){
 		return
 	};
 	if (chat[0].toLowerCase()==="!votenay"){
-		if (voters.indexOf(uid)<0){
-			voters.push(uid)
-			propvotes[1]++
-			if (voters.length%5===0){
-				setTimeout(function(){API.sendChat(voters.length+" people have voted!")},1000)
+		if (VOTING.voters.indexOf(uid)<0){
+			VOTING.voters.push(uid)
+			VOTING.propvotes[1]++
+			if (VOTING.voters.length%5===0){
+				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
@@ -2064,15 +2058,15 @@ function proposalVoting(data){
 		try {
 			n = Number(chat[1])-1
 		} catch(e){return}
-		if (n>proposals.length){
+		if (n>VOTING.proposals.length){
 			API.sendChat("No such option in the poll.")
 			return
 		}
-		if (voters.indexOf(uid)<0){
-			voters.push(uid)
-			proposals[n][1]+=1
-			if (voters.length%5===0){
-				setTimeout(function(){API.sendChat(voters.length+" people have voted!")},1000)
+		if (VOTING.voters.indexOf(uid)<0){
+			VOTING.voters.push(uid)
+			VOTING.proposals[n][1]+=1
+			if (VOTING.voters.length%5===0){
+				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
 			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
@@ -2080,30 +2074,30 @@ function proposalVoting(data){
 		return
 	};
 		// Counting the votes.	
-	if (chat[0].toLowerCase()==="!voteend" && (assertPermission(uid,0) || votestarter === uid)) {
+	if (chat[0].toLowerCase()==="!voteend" && (assertPermission(uid,3) || VOTING.votestarter === uid)) {
 		// If 'proposal' is declared, the single-option voting is in process.
-		if (proposal){
-			if (propvotes[0]===0 && propvotes[1]===0){
+		if (VOTING.proposal){
+			if (VOTING.propvotes[0]===0 && propvotes[1]===0){
 				API.sendChat("No one has voted.")
 				API.sendChat("/votefinish")
 				return
 			}
 			var yea = "The majority has voted in favor of the proposal."
 			var nay = "The majority has ruled against the proposal. No revolution today, sorry."
-			var result = [nay,yea][+(propvotes[1]<propvotes[0])]
+			var result = [nay,yea][+(VOTING.propvotes[1]<VOTING.propvotes[0])]
 			API.sendChat(result)
 			API.sendChat("/votefinish")			
 			return
 		}
 		// If 'proposals' is not null, then multiple-option voting is in process.
-		if (proposals){
+		if (VOTING.proposals){
 			var winprop = []
 			var maxvotes = 0
-			for (var i=0; i<proposals.length; i++){
-				if (proposals[i][1]>maxvotes){
+			for (var i=0; i<VOTING.proposals.length; i++){
+				if (VOTING.proposals[i][1]>maxvotes){
 					winprop = [i]
-					maxvotes = proposals[i][1]
-				} else if (proposals[i][1]===maxvotes){
+					maxvotes = VOTING.proposals[i][1]
+				} else if (VOTING.proposals[i][1]===maxvotes){
 					winprop.push(i)
 				}
 			}
@@ -2113,121 +2107,164 @@ function proposalVoting(data){
 				return
 			}
 			if (winprop.length===1){
-				var result = proposals[winprop[0]][0]
+				var result = VOTING.proposals[winprop[0]][0]
 				if (!(/[.!?]/.test(result.slice(-1)))) {result+="."} // Add a full stop at the end of result if it's not there.
-				API.sendChat("The winning option of today's voting is: "+result+" with "+maxvotes+" votes.")
+				API.sendChat("The winning option of today's voting is: "+result.slice(0,-1)+", with "+maxvotes+" votes.")
 				API.sendChat("/votefinish")
 			} else if (winprop.length>=4){
 				API.sendChat('Four or more options have the same score of '+maxvotes+' votes. I strongly advise you to revote. Type "!revote" to do that.')
-				reproposals = proposals
-				proposals = null
+				VOTING.reproposals = VOTING.proposals
+				VOTING.proposals = null
 			} else {
 				var ties = ""
-				tiedproposals = []
+				VOTING.tiedproposals = []
 				for (j=0; j<winprop.length; j++) {
-					tiedproposals.push(proposals[winprop[j]][0])
-					ties += proposals[winprop[j]][0]
+					VOTING.tiedproposals.push(VOTING.proposals[winprop[j]][0])
+					ties += VOTING.proposals[winprop[j]][0]
 					if (/[.!?]/.test(ties.slice(-1))) {ties+=" "}
 					else {ties+="; "}
 				}
 				ties = ties.slice(0,-2) + "."
-				tiedproposals.forEach(function(elem){elem[1]=0})
-				proposals = null
+				VOTING.tiedproposals.forEach(function(elem){elem[1]=0})
+				VOTING.proposals = null
 				clearTimeouts("voting")
 				API.sendChat(winprop.length+" options are tied with "+maxvotes+" votes each. They are: "+ties)
 				setTimeout(function(){API.sendChat('If you would like to restart the voting with those options only, type "!voteties"')},500)
+				proposalVoting("/votefinish")
 			}
 		}
 		return
 	};
 	if (chat[0].toLowerCase()==="!votestandings") {
-		if (proposal) {
-			API.sendChat("Currently "+propvotes[0]+" have voted 'yea', and "+propvotes[1]+" have voted 'nay'")
+		if (VOTING.proposal) {
+			if (VOTING.propvotes[0] === 0 && VOTING.propvotes[1] === 0){
+				API.sendChat("No one has voted yet")
+			} else {
+				API.sendChat("Currently "+VOTING.propvotes[0]+" have voted 'yea', and "+VOTING.propvotes[1]+" have voted 'nay'")
+			}
 			return
 		}
-		if (proposals) {
+		if (VOTING.proposals) {
 			var winprop = []
 			var maxvotes = 0
-			for (var i=0; i<proposals.length; i++){
-				if (proposals[i][1]>maxvotes){d
+			for (var i=0; i<VOTING.proposals.length; i++){
+				if (VOTING.proposals[i][1]>maxvotes){
 					winprop = [i]
-					maxvotes = proposals[i][1]
-				} else if (proposals[i][1]===maxvotes) {
+					maxvotes = VOTING.proposals[i][1]
+				} else if (VOTING.proposals[i][1]===maxvotes) {
 					winprop.push(i)
 				}
 			}
-			if (winpop.length===1) {
-				API.sendChat("Currently the leading option is '"+proposals[winprop[0]][0]+"' with "+maxvotes+" votes.")
+			if (maxvotes === 0){
+				API.sendChat("No one has voted yet")
+				return
+			}
+			if (winprop.length === 1) {
+				API.sendChat("Currently the leading option is '"+VOTING.proposals[winprop[0]][0]+"' with "+maxvotes+" votes.")
 			} else {
 				API.sendChat("Two or more options are tied with "+maxvotes+" votes each")
 			}
 			return
 		}
 	};
-	if (chat[0].toLowerCase()==="!voteties" && (assertPermission(uid,0) || votestarter === uid)){
+	if (chat[0].toLowerCase()==="!revote" && (assertPermission(uid,0) || VOTING.votestarter === uid)){
 		// Create a "chat message" object and call a function as if a chat message was sent.
-		proposals = null
-		var chat = {}
-		chat.un = "name"
-		chat.uid = votestarter
-		chat.message = "!votestart "+tiedproposals.join(" -o ")
-		chat.cid = "0"
-		chatClassifier(chat)
-		
-	};
-	if (chat[0].toLowerCase()==="!revote" && (assertPermission(uid,0) || uid === votestarter)){
-		// Create a "chat message" object and call a function as if a chat message was sent.
-		if (proposal){
-			propvotes = null
+		if (VOTING.proposal){
+			VOTING.propvotes = null
 			var chat = {}
 			chat.un = "name"
-			chat.uid = votestarter
-			chat.message = "!votestart "+proposal
+			chat.uid = VOTING.votestarter
+			chat.message = "!votestart "+VOTING.proposal
 			chat.cid = "0"
-			proposal = null
+			VOTING.proposal = null
 			chatClassifier(chat)
 		}
-		if (reproposals){
+		if (VOTING.reproposals || VOTING.proposals){
 			var message = "!votestart "
-			reproposals.forEach(function(elem){
-				message += elem[0] + " -o "
-			})
+			if (VOTING.reproposals){
+				VOTING.reproposals.forEach(function(elem){
+					message += elem[0] + " -o "
+				})
+			} else {
+				VOTING.proposals.forEach(function(elem){
+					message += elem[0] + " -o "
+				})			
+			}
 			message = message.slice(0,-4)
-			proposals = null
-			reproposals = null
+			VOTING.proposals = null
+			VOTING.reproposals = null
 			var chat = {}
 			chat.un = "name"
-			chat.uid = votestarter
-			chat.message = "!votestart "+message
+			chat.uid = VOTING.votestarter
+			chat.message = message
 			chat.cid = "0"
 			chatClassifier(chat)
 		}
 	};
-	if (chat[0].toLowerCase()==="!voteremind" && (assertPermission(uid,2) || uid===votestarter)) {
-		if (proposal) {
-			API.sendChat("The voting is in progress. Today's proposal is: "+proposal+'. Vote by typing "!voteyea" or "!votenay"')
+	if (chat[0].toLowerCase()==="!voteremind" && (assertPermission(uid,2) || VOTING.votestarter === uid)) {
+		if (VOTING.proposal) {
+			API.sendChat("The voting is in progress. Today's proposal is: "+VOTING.proposal+'. Vote by typing "!voteyea" or "!votenay"')
 		}
-		if (proposals) {
-			var chat = "The voting is in progress. Options are"+propchat.slice(propchat.indexOf(":"))
+		if (VOTING.proposals) {
+			var chat = "The voting is in progress. Options are"+VOTING.propchat.slice(VOTING.propchat.indexOf(":"))
 			API.sendChat(chat)
 			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
 		}
 	};
-	if (data==="/votefinish" || (chat[0].toLowerCase()==="!votehalt" && (assertPermission(uid,4) || votestarter===uid))) {
-	// Remove all voting-related variables and turn off chat listeners.
-		propvotes = null
-		proposal = null
-		proposals = null
-		tiedproposals = null
-		voters = null
-		votestarter = null
+	if (data==="/votefinish"){
+		// Remove all voting-related variables (except for ties) and turn off chat listeners.
+		var ties = VOTING.tiedproposals
+		VOTING = Object.create(null)
+		if (ties){VOTING.tiedproposals = ties}
 		API.off(API.CHAT,proposalVoting)
 		API.off(API.CHAT_COMMAND,proposalVoting)
 		clearTimeouts("voting")
 	};
+	return
 };
 
-function enlistment(data){}
+function enlistment(data){
+	if (data.message[0]!="!"){return}
+	var command = data.message.slice(1)
+	var uid = data.uid
+	if (command === "signup"){
+		VOTING.signedusers[uid] = data.un
+		return
+	}
+	if (command === "withdraw"){
+		delete VOTING.signedusers[uid]
+		return
+	}
+	if (command === "signed"){
+		function chatTimeout(i){
+			setTimeout(function(){API.sendChat("The following people have decided to join: "+signed.slice(i*15,(i+1)*15).join(", ")+".")},i*250)
+		}
+		var signed = []
+		for (var id in VOTING.signedusers){
+			signed.push(VOTING.signedusers[id])
+		}
+		for (var i=0; i<=signed.length/15; i++){
+			chatTimeout(i)
+		}
+		return
+	}
+	if (command === "signfinish" && assertPermission(uid,2)){
+		enlistment({message:'!signed',uid:uid})
+		delete VOTING.signtitle
+		delete VOTING.signedusers
+		clearTimeouts("sign")
+		API.off(API.CHAT,enlistment)
+		return
+	}
+	if (command === "signhalt" && assertPermission(uid,3)){
+		delete VOTING.signtitle
+		delete VOTING.signedusers
+		clearTimeouts("sign")
+		API.off(API.CHAT,enlistment)
+		return	
+	}
+	return
+};
 
 function findInQueue(uid){
 	/* Find out if the persion is in the wait list and their position, if in the queue. 
@@ -2319,9 +2356,7 @@ function assertPermission(uid,n){
 	1 — resident DJ; 2 — bouncer; 3 — manager; 4 — cohost; 5 — host; 0 — MasterList only. 
 	"n^2/n" is there to make n=0 always fail that check regardless of any changes in plug roles,
 	at the same time retaining the simple ">=n" for n!=0. */
-	if (MasterList.indexOf(uid)>-1 || API.getUser(uid).role>=((n*n)/n)){
-		return true
-	} else {return false}
+	return MasterList.indexOf(uid)>-1 || API.getUser(uid).role>=((n*n)/n)
 };
 
 function enableSetting(uid/*, 'setting' args*/){
@@ -2341,6 +2376,7 @@ function enableSetting(uid/*, 'setting' args*/){
 	for (var i=1; i<arguments.length; i++){
 		SETTINGS[arguments[i]]=true
 	}
+	return
 };
 
 function disableSetting(uid/*, 'setting' args*/){
@@ -2361,6 +2397,7 @@ function disableSetting(uid/*, 'setting' args*/){
 	for (var i=1; i<arguments.length; i++){
 		SETTINGS[arguments[i]]=false
 	}
+	return
 };
 
 function enoughToSkip(){
@@ -2369,9 +2406,7 @@ function enoughToSkip(){
 	var grey = 0
 	users.forEach(function(elem){if (elem.role<=1){grey++}})
 	if (API.getTimeElapsed()<10){return false}
-	if (score.negative >= (Math.floor(score.positive*1.25)+Math.floor(grey/5)+3)) {
-		return true
-	} else {return false}
+	return score.negative >= (Math.floor(score.positive*1.25)+Math.floor(grey/5)+3)
 };
 
 function skipMix(songid, duration, name){
@@ -2392,12 +2427,14 @@ function kittChats(data){
 	/* Tracks messages from bot and acts if needed. */
 	var p_lastpos = /is not in the list. Sorry.$/
 	var p_wakeup = /wake up!$/
+	console.log(data.cid)
 	if (p_lastpos.test(data.message)){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},2000)
 	}
 	if (p_wakeup.test(data.message)){
 		API.moderateDeleteChat(data.cid)
 	}
+	return
 };
 
 function fixLinksAndEmoji(message){
@@ -2458,6 +2495,7 @@ function checkSpam(uid, name, command){
 	if (ALLCOMMANDS.check(command)>-1){
 		PATRONS[uid].commands += 1
 	}
+	return
 }
 
 			// MODERATION
@@ -2476,6 +2514,7 @@ function moveInList(UPN){
 	if (UPN.position){
 		API.moderateMoveDJ(uid,UPN.position)
 	}
+	return
 };
 
 function userMute(UDN){
@@ -2525,6 +2564,7 @@ function setStaff(URN){
 	if (mutationlists.users_to_staff[URN.name]){
 		API.moderateSetRole(mutationlists.users_to_staff[URN.name][0],mutationlists.users_to_staff[URN.name][1])
 	}
+	return
 };
 
 			// PATRON FUNCTIONS			
@@ -2534,13 +2574,14 @@ function updatePatrons(){
 		var user = u[i]
 		updatePatron(user)
 	}
+	return
 };
 
 function modifyPatron(name, prop, value){
 	var uid = getUID(name)
 	if (!uid){return}
 	
-	if (prop === "role" || "prole" || "roulette" || "rouletterecord"){
+	if (typeof PATRONS[uid][prop] === "number"){
 		PATRONS[uid][prop] = parseInt(value)
 	}
 	return
@@ -2563,6 +2604,7 @@ function updatePatron(user){
 	patron.role = user.role
 	patron.prole = user.role
 	PATRONS[user.id] = patron
+	return
 };
 
 function patronJoin(user){
@@ -2581,6 +2623,7 @@ function patronJoin(user){
 		patron.online = true
 		PATRONS[user.id] = patron
 	}
+	return
 };
 
 function patronLeave(user){
@@ -2588,10 +2631,12 @@ function patronLeave(user){
 		PATRONS[user.id].lastseen = Date.now()
 		PATRONS[user.id].online = false
 	}
+	return
 };
 
 function patronPlayed(data){
 	PATRONS[data.dj.id].songplays += 1
+	return
 };
 
 function patronScore(){
@@ -2605,6 +2650,7 @@ function patronScore(){
 	SCORE = {woot: 0, meh: 0, grab: 0, uid: uid}
 	SCORE.saved = true
 	updateScore()
+	return
 };
 
 function patronVote(data){
@@ -2814,7 +2860,7 @@ function Patron(id){
 	this.prole = 0
 	this.online = false
 	this.alarm = false
-	this.leave = false
+	this.leave = [false, false]
 		// stats
 	this.commands = 0
 	this.messages = 0
