@@ -11,7 +11,7 @@ TO DO:
 3. Rework the 'lastpos' command and tons of unnecessary arrays it involves.
 4. Swearing filter.
 5. Song titles filtering/fixing.
-8. Custom mute/ban times.
+9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
 */
 
 
@@ -100,6 +100,7 @@ Object.defineProperties(SETTINGS,{
 					ALLCOMMANDS.update()
 					chatTools.alternatives()
 					chatFun.alternatives()
+					getBansAndMutes()
 					return
 		}
 	},
@@ -717,21 +718,6 @@ chatCommands = {
 		}
 		return
 	}
-		// temp
-	, fixusercommands: function(){
-		chatUser = Object.create(null)
-		for (var i=0; i<user_commands.length; i++){
-			var command = user_commands[i][0]==="!" ? user_commands[i].slice(1) : user_commands[i]
-			chatUser[command] = user_responses[i]
-		}
-		chatUser.comminput = user_comminput
-		chatCommands.addvar("chatUser")
-		chatCommands.remvar("USERCOMMANDS")
-		chatCommands.remvar("user_commands")
-		chatCommands.remvar("user_responses")
-		chatCommands.remvar("user_comminput")
-		chatCommands.savetolocalstorage(true)
-	}
 };
 
 			// USER CHAT
@@ -822,7 +808,7 @@ chatControl = {
 		if (!assertPermission(uid,3)){return}
 		if (setting){
 			var val = setting.split(".").reduce(deepObject,SETTINGS)
-			if (val != undefined){API.sendChat(setting+": "+val); return}
+			if (val !== undefined){API.sendChat(setting+": "+val); return}
 		}
 		var chat = ""
 		for (var setting in SETTINGS){
@@ -1167,20 +1153,28 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		console.log(tid)
 		if (!tid){return}
 		target = getName(tid)
-		var chat_durations = ["1","2","3","s","m","l","short","medium","long","15","30","45","900","1800","2700","900000","1800000","2700000"]
-		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3 + 1
-		console.log(duration)
-		if (duration<0){return}
-		console.log(API.getUser(tid).role)
-		if (API.getUser(tid).role===0){
-			console.log("HERE")
-			userMute({uid: tid, duration: duration})
+		var chat_durations = ["s","m","l","short","medium","long","15","30","45"]
+		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
+		if (duration>=0){
+			if (API.getUser(tid).role===0){
+				userMute({uid: tid, duration: duration})
+			} else {
+				staffMute({uid: tid, duration: duration})
+			}
 		} else {
-			console.log("OR HERE")
-			staffMute({uid: tid, duration: duration})
+			var dur = Number(argumentsSlice(arguments,-1))
+			if (isNaN(dur) || dur<0.3){API.sendChat("Invalid duration"); return}
+			if (dur>45){API.sendChat("Can't mute for longer than 45 minutes yet. Coming soon!"); return}
+			duration = ~~(dur/15)
+			API.sendChat("@"+target+", you've been muted for "+dur+" minutes.")
+			if (API.getUser(tid).role===0){
+				userMute({uid: tid, duration: duration})
+			} else {
+				staffMute({uid: tid, duration: duration})
+			}
+			setTimeout(userUnmute,dur*60*1000,tid)
 		}
 		return
 	}
@@ -1189,10 +1183,29 @@ chatTools = {
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
 		if (!tid){return}
-		var chat_durations =["1","2","3","h","d","p","hour","day","perma","60","1440","permanent","3600000","86400000","forever","1","24","endless"]
-		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3 + 1
-		if (duration<0){return}
-		userBan({uid: tid, duration: duration})
+		var chat_durations =["h","d","p","hour","day","perma","h","d","permanent","h","d","forever","1","24","endless"]
+		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
+		if (duration>=0){
+			userBan({uid: tid, duration: duration})
+		} else {
+			var dur = Number(argumentsSlice(arguments,-1))
+			if (isNaN(dur) || dur<0.005){API.sendChat("Invalid duration"); return}
+			if (dur > 24){API.sendChat("Unable ban for longer than 24 hours for now. Coming soon!"); return}
+			duration = dur > 1 ? 1 : 0
+			userBan({uid: tid, duration: duration})
+			setTimeout(userUnban,dur*60*60*1000,tid)
+		}
+		return
+	}
+	, unmute: function(uid, name, target/*, *target */){
+		var target = argumentsSlice(arguments, 2)
+		userUnmute(getUID(target))
+		return
+	}
+	, unban: function(uid, name, target/*, *target */){
+		var target = argumentsSlice(arguments, 2)
+		userUnban(getUID(target))
+		return
 	}
 	, votestart: function(uid, name, text/*, *text */){
 		/*
@@ -1538,6 +1551,7 @@ function surveillance(mutation){
 	var pattern_destaff = /removed .* from the staff./
 	var pattern_muted = /muted .* for .* minutes./
 	var pattern_skipped = /skipped the current DJ./
+	var pattern_banned = /(banned .* from the community for one (hour|day).)|(permanently banned .* from the community.)/
 	
 		// Get message text.
 	var msg = mutation[0].addedNodes[0].childNodes[1].childNodes[1].textContent
@@ -1568,15 +1582,22 @@ function surveillance(mutation){
 		var uid = getUID(name)
 		PATRONS[uid].role = 0
 		if (mutationlists.users_to_mute.indexOf(name)>-1){
-			userMute({uid: uid, duration: 1, name: name})
+			userMute({uid: uid, duration: 0, name: name})
 		}
 		return
 	};
 	if (pattern_muted.test(msg)){
 		var name = msg.slice(6,msg.length-16)
-		setStaff({name: name})
+		if (mutationlists.users_to_staff[name]){
+			setStaff({name: name})
+		}
+		getBansAndMutes()
 		return
 	};
+	if (pattern_banned.test(msg)){
+		getBansAndMutes()
+		return
+	}
 	if (pattern_staff.test(msg)){
 		/* "Resident DJ" is the only role consisting of two words, so that has to be check when slicing the
 		message to retrieve the name. */
@@ -1743,13 +1764,14 @@ function sameArtist(){
 	song has played recently.
 	*/
 	if (!SETTINGS.sameartist){return}
-	var ql = API.getWaitList().length
-	if (ql<4){return}
 	var date = new Date()
 	var hrs = date.getHours()
-	if (hrs > 0 && hrs < 2){
-		chatControl.disable(4702482,'sameartist',420)
+	if (hrs > 0 && hrs < 8){
+		chatControl.disable(4702482,'sameartist',60*(7-hrs)+10)
+		return
 	}
+	var ql = API.getWaitList().length
+	if (ql<4){return}
 	var artist = API.getMedia().author
 	var time = date.getTime()
 	var dj = API.getDJ().username
@@ -1895,16 +1917,6 @@ function clearDroppedUsers(){
 		}
 	}
 	return
-};
-
-function catLimit(uname){
-	/* Once every 24 hours clears the catLimit list. */
-	delete catusr[uname]
-};
-
-function asianLimit(uname){
-	/* Once every 24 hours clears the catLimit list. */
-	delete asnusr[uname]
 };
 
 function clearIssued(command,uid){
@@ -2537,7 +2549,7 @@ function userMute(UDN){
 	/* Mute a user for a given duration. UDN stands for UID, Duration, Name — three properties of argument object that
 	that needs to be passed, with uid or name being optional, but not both. */
 	var uid = UDN.uid || getUID(UDN.name)
-	var duration = [API.MUTE.SHORT,API.MUTE.MEDIUM,API.MUTE.LONG][UDN.duration-1]
+	var duration = [API.MUTE.SHORT,API.MUTE.MEDIUM,API.MUTE.LONG][UDN.duration]
 	API.moderateMuteUser(uid,1,duration)
 	while (mutationlists.users_to_mute.indexOf(UDN.name)!=-1){ // Remove all elements that have that name
 		mutationlists.users_to_mute.splice(mutationlists.users_to_mute.indexOf(UDN.name),1)
@@ -2564,8 +2576,18 @@ function userBan(UDN){
 	/* Ban a user for a given duration. UDN stands for UID, Duration, Name — three properties of argument object that
 	that needs to be passed, with uid or name being optional, but not both. */
 	var uid = UDN.uid || getUID(UDN.name)
-	var duration = [API.BAN.HOUR, API.BAN.DAY, API.BAN.PERMA][UDN.duration-1]
+	var duration = [API.BAN.HOUR, API.BAN.DAY, API.BAN.PERMA][UDN.duration]
 	API.moderateBanUser(uid,1,duration)
+	return
+};
+
+function userUnmute(uid){
+	API.moderateUnmuteUser(uid)
+	return
+};
+
+function userUnban(uid){
+	API.moderateUnbanUser(uid)
 	return
 };
 
@@ -2582,6 +2604,13 @@ function setStaff(URN){
 	}
 	return
 };
+
+function getBansAndMutes(){
+	$('#users-button').click()
+	setTimeout(function(){$('div.button.bans').click()},333)
+	setTimeout(function(){$('div.button.mutes').click()},666)
+	setTimeout(function(){$('#chat-button').click()},1000)
+}
 
 			// PATRON FUNCTIONS			
 function updatePatrons(){
