@@ -8,10 +8,10 @@
 
 /* 
 TO DO:
-3. Rework the 'lastpos' command and tons of unnecessary arrays it involves.
 4. Swearing filter.
 5. Song titles filtering/fixing.
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
+10. !iwanttocycleevenwithdjcycleturnedoff
 */
 
 
@@ -23,16 +23,18 @@ BOT_ROOM = "dvach"
 
 	// Global variables declaration.
 var STATE
-var MasterList = [4702482, 3737285, 4856012, 5659102]	// list of user ids that can fully control the bot.
-var IgnoreList = []
+var MasterList = [3737285, 4856012, 5659102]	// List of user ids that can fully control the bot.
+var IgnoreList = []										// List is users to ignore some commands from. Should probably be in the localStorage.
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var mutationlists = Object.create(null)					// Object to hold all the arrays and objects the MutationObserver should refer to.
 var global_uid = null									// global uid value to use in SETTINGS setters.
 var DJCYCLE												// DJ Cycle state.
-var PATRONS = Object.create(null)						// Contains custom user-objects
+var WAITLIST = []										// Current array of the queue.
+var DROPPED = Object.create(null)						// List of users disconnected while in a queue.
+var PATRONS = Object.create(null)						// Contains custom user-objects.
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
 var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
-// var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from localStorage.
+// var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from the localStorage.
 
 // What type of commands to respond to or actions to take.
 var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true,
@@ -80,9 +82,9 @@ Object.defineProperties(SETTINGS,{
 	},
 	'setup': {
 		/* Log the time, turn off any existing event listeners, clear timeouts,
-		turn off disabled settings, flush limits, fix patron objects in case something
-		has been changed, update command list and add alternatives ways to call
-		certain functions. */
+		get initial waitlist, turn off disabled settings, flush limits, fix patron 
+		objects in case something has been changed, update command list and add
+		alternatives ways to call certain functions. */
 		enumerable: false,
 		writable: false,
 		value: function(){
@@ -92,6 +94,7 @@ Object.defineProperties(SETTINGS,{
 					localStorage.setObject('startuptimes',times)
 					API.off()
 					clearTimeouts(this,Object.keys(timeouts))
+					WAITLIST = API.getWaitList().map(function(elem){return elem.id})
 					STATE = "running"
 					enableSetting(4702482,'all')
 					disableSetting.apply(this, [4702482].concat(this.disabled))
@@ -147,7 +150,7 @@ var startupnumber = 1
 var chatsstat = 0;											// is used to count chat update rate
 var chatsglob = [[Date.now(),0],[Date.now(),0]];
 
-mutationlists.users_to_add = [];							// Objects Mutation Observer checks after a pattern match.
+mutationlists.users_to_add = Object.create(null);							// Objects Mutation Observer checks after a pattern match.
 mutationlists.users_to_move = Object.create(null);
 mutationlists.users_to_mute = [];
 mutationlists.users_to_staff = Object.create(null);
@@ -156,16 +159,9 @@ mutationlists.user_to_skipadd = null
 mutationlists.user_to_skipmove = null
 mutationlists.connectionCID = null
 
-var dropped_users_list = Object.create(null);	// list of users disconnected while in a queue. Associative array 
-												// with 'key' being username. Holds position and time.
-var wlc = [];	
-var wlcn = [];		// wait list arrays. Previous and new (after wait_list_update
-var wlp = [];		// event). ...n only holds usernames instead of json objects
-var wlpn = [];
-
 /* 
 Only for reference, the actual 'localstoragekeys' variable is also loaded from localStorage.
-var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','user_commands','user_responses','user_comminput','allissuedcommands',
+var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','allissuedcommands',
  						'dictru','dicteng','tweek','atresponses','bugreports','VALENTINES','PATRONS','EMOJIDICT','chatUser'] 
 */ 					
 						
@@ -227,12 +223,6 @@ botStart = function(){
 	// Set up the bot.
 	SETTINGS.setup()
 
-	// Get waitlist at start
-	wlp = API.getWaitList()
-	for (i = 0; i<wlp.length; i++) {
-		wlpn[i] = wlp[i].username		// extract only usernames
-	}
-	
 			// EVENT LISTENERS //
 			
 	// Commands (only work when issued by bot itself, i.e. on a computer it is running on).
@@ -260,7 +250,7 @@ botStart = function(){
 		chatsstat++ 		// increment chats count to calculate chat rate for song stats
 		chatsglob[0][1]++	// increment chats count to calculate global chat rate
 		chatsglob[1][1]++	// increment chats count to calculate global chat rate
-		PATRONS[message.uid].messages += 1
+		if (PATRONS[message.uid]){PATRONS[message.uid].messages += 1}
 		return
 	});
 	
@@ -363,6 +353,7 @@ botRestart = function(){
 
 botHangman = function(language){
 	if (["ru","eng"].indexOf(language)<0){return}
+// 	if (mode === "hangman"){API.sendChat("You are already playing the game!")}
 	console.log("Starting Hangman!")
 	API.off(API.CHAT, hangmanChat)
 	mode = "hangman"
@@ -393,38 +384,6 @@ botHangman = function(language){
 	console.log(hangmanword)
 	setTimeout(function(){API.sendChat('Guess a letter or the word by typing "!letter _"/"!lt _" or "!word ___". You have 10 guesses.')},(500))
 	API.on(API.CHAT, hangmanChat)
-};
-
-botHangmanConsole = function(language){
-	console.log("Starting Hangman!")
- 	API.off(API.CHAT_COMMAND, hangcommands);
-	mode = "hangman"
-	lng = ""
-	if (language==="ru"){
-		ind=Math.floor(Math.random()*dictru.length)
-		hangmanword = dictru[ind]
-		hangmanwordg = "_"+Array(hangmanword.length).join(" _")
-		if (hangmanword.indexOf("-")>-1){
-			ind = hangmanword.indexOf("-")
-			hangmanwordg = hangmanwordg.substr(0,ind*2)+"-"+hangmanwordg.substr(ind*2+1)
-		}	
-		lng="Russian"
-	}
-	if (language==="eng"){
-		ind=Math.floor(Math.random()*dicteng.length)
-		hangmanword = dicteng[ing]
-		hangmanwordg = "_"+Array(hangmanword.length).join(" _")
-		if (hangmanword.indexOf("-")>-1){
-			ind = hangmanword.indexOf("-")
-			hangmanwordg = hangmanwordg.substr(0,ind*2)+"-"+hangmanwordg.substr(ind*2+1)
-		}
-		lng="English"
-	}	
-	console.log("Let's play Hangman in "+lng+"!")
-	setTimeout(function(){console.log(hangmanwordg)},(250))
-	console.log(hangmanword)
-	setTimeout(function(){console.log('"Guess a letter or the word by typing "!letter _" or "!word ___"')},(500))
- 	API.on(API.CHAT_COMMAND, hangcommands);
 };
 
 			// INTERNAL CHAT COMMANDS.
@@ -950,9 +909,9 @@ chatTools = {
 	alternatives: function(){
 		this.dc = this.lastpos
 		this.lp = this.lastplayed
-		this.message = this.bugreport
+		this.bugreport = this.message
 	}
-	, lastpos: function(uid, name, target/*, *target */){
+	, lastpos_old: function(uid, name, target/*, *target */){
 		/* 
 		Move the users to the position they was at before dropping from plug.dj.
 		Extracts the userID for the required person, checks if they are already in the wait list,
@@ -966,8 +925,9 @@ chatTools = {
 		if (name in dropped_users_list) {
 			var place = parseInt(dropped_users_list[name][0])
 			var queue = API.getWaitList()
-			if (findInQueue(uid)[0] && findInQueue(uid)[1]>place){
-				mutationlists.users_to_move[usname]=[uid,place]
+			if (findInQueue(uid)[0]){
+				if (findInQueue(uid)[1]<=place){return}
+				mutationlists.users_to_move[name]=[uid,place]
 				API.moderateMoveDJ(uid,place)
 				setTimeout(function(){
 					if (mutationlists.users_to_move[name]) {
@@ -996,6 +956,37 @@ chatTools = {
 		} else {
 			API.sendChat("@"+name+" is not in the list. Sorry.")
 		}
+	}
+	, lastpos: function(uid, name, target/*, target */){
+		/* 
+		Move the users to the position they was at before dropping from plug.dj.
+		Extracts the userID for the required person, checks if they are already in the wait list,
+		adds them to the arrays Mutation Observer refers to and calls either addDJ or moveDJ functions.
+		Then in 3 seconds checks if everything was done successfully, sending chat message if not.
+		*/
+		if (target){
+			var target = argumentsSlice(arguments,2)
+			if (target==="_chat"){API.sendChat(name+"'s place was "+DROPPED[uid][1]+" on "+String(new Date(DROPPED[uid][0]))); return}
+			var tid = getUID(target)
+			var target = getName(tid) || target
+			if (!tid){API.sendChat("Invalid name '"+target+"'"); return}
+		} else {var tid = uid; var target = name}
+		if (!(tid in DROPPED)){API.sendChat(target+" is not in the list of disconnected users."); return}
+		var place = DROPPED[tid][1]
+		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)) {
+			chatTools.move("lastpos",tid,place)
+			setTimeout(function(){
+					if (mutationlists.users_to_add[tid]){
+						API.sendChat("Unable to add @"+target+" to wait list. Refresh the page and try again. Your last position was "+place)
+					}
+					if (mutationlists.users_to_move[tid] && !mutationlists.users_to_add[tid]){
+						API.sendChat("Unable to move @"+target+". Refresh the page and try again. Your last position was "+place)
+					}
+					delete mutationlists.users_to_move[tid]
+					delete mutationlists.users_to_add[tid]
+				},3000)
+		}
+		return
 	}
 	, lastplayed: function(){
 		/* Info about current track: how many times it has been played and when was the last. */
@@ -1043,7 +1034,7 @@ chatTools = {
 				mutationlists.user_to_skipmove = djuid
 			} else {
 				mutationlists.user_to_skipadd = djuid
-				mutationlists.users_to_move[djname] = [djuid,1]
+				mutationlists.users_to_move[djuid] = 1
 			}
 			API.moderateForceSkip()
 			return
@@ -1084,7 +1075,7 @@ chatTools = {
 		/* Set the alarm to set off when you become the first in the queue. */
 		PATRONS[uid].alarm = true
 	}
-	, bugreport: function(uid, name, text/*, *text */){
+	, message: function(uid, name, text/*, *text */){
 		/* Leave a message after the tone. */
 		if (!text){return}
 		bugreports.push(argumentsSlice(arguments,2))
@@ -1129,22 +1120,30 @@ chatTools = {
 		}
 		var target_name = getName(tid)
 		var current_role = PATRONS[tid].role
-		if ((assertPermission(uid,Math.min(target_role+1,5)) && setter_role>current_role) || assertPermission(uid,0)) {
+		if ((assertPermission(uid,Math.min(target_role+1,5)) && setter_role>(current_role-(uid===tid))) || assertPermission(uid,0)) {
 			setStaff({name: target_name, role: target_role})
 		}
 		return
 	}
 	, move: function(uid, name, target/*, *target, place */){
-		if (!assertPermission(uid,2)){return}
-		var target = argumentsSlice(arguments,2,-1)
-		var place = Number(arguments[arguments.length-1])
-		var tid = getUID(target)
-		if (!tid){return}
-		target = getName(tid)
+		/* Move target user to a specified place in queue. Automatically adds them to the wait list
+		if not already there. If this is called from the 'lastpos' function, name becomes the target uid,
+		and target becomes the place to move the user to. 'uid' is numeric, so there should be no way
+		to abuse this (there is no permission check if uid==="lastpos"). */
+		if (uid !== "lastpos"){
+			if (!assertPermission(uid,2)){return}
+			var target = argumentsSlice(arguments,2,-1)
+			var place = Number(arguments[arguments.length-1])
+			var tid = getUID(target)
+			if (!tid){return}
+			target = getName(tid)
+			var direct = true
+		} else {var tid = name; var place = target; var direct = false}
 		if (findInQueue(tid)[0]){
+			if (!direct){mutationlists.users_to_move[tid] = place}
 			API.moderateMoveDJ(tid,place)
 		} else {
-			mutationlists.users_to_move[target] = [tid,place]
+			if (!direct){mutationlists.users_to_add[tid] = true; mutationlists.users_to_move[tid] = place}
 			API.moderateAddDJ(tid)
 		}
 		return
@@ -1153,7 +1152,7 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		if (!tid){return}
+		if (!tid){API.sendChat("Invalid target"); return}
 		target = getName(tid)
 		var chat_durations = ["s","m","l","short","medium","long","15","30","45"]
 		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
@@ -1182,7 +1181,7 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		if (!tid){return}
+		if (!tid){API.sendChat("Invalid target"); return}
 		var chat_durations =["h","d","p","hour","day","perma","h","d","permanent","h","d","forever","1","24","endless"]
 		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
 		if (duration>=0){
@@ -1199,12 +1198,16 @@ chatTools = {
 	}
 	, unmute: function(uid, name, target/*, *target */){
 		var target = argumentsSlice(arguments, 2)
-		userUnmute(getUID(target))
+		var tid = getUID(target)
+		if (!tid){API.sendChat("Invalid target"); return}
+		userUnmute(tid)
 		return
 	}
 	, unban: function(uid, name, target/*, *target */){
 		var target = argumentsSlice(arguments, 2)
-		userUnban(getUID(target))
+		var tid = getUID(target)
+		if (!tid){API.sendChat("Invalid target"); return}
+		userUnban(tid)
 		return
 	}
 	, votestart: function(uid, name, text/*, *text */){
@@ -1569,33 +1572,38 @@ function surveillance(mutation){
 		// Pattern matching.
 	if (pattern_add.test(msg)){
 		var name = msg.slice(6,msg.length-18)
-		moveInList({name: name})
+		var uid = getUID(name)
+		delete mutationlists.users_to_add[uid]
+		moveInList({uid: uid, name: name})
 		return
 	};
 	if (pattern_move.test(msg)){
 		var name = msg.slice(6,msg.length-49+(msg.slice(-48).search('from position ')))
-		delete mutationlists.users_to_move[name]
+		var uid = getUID(name)
+		delete mutationlists.users_to_move[uid]
 		return
 	};
 	if (pattern_destaff.test(msg)){
 		var name = msg.slice(8,msg.length-16)
 		var uid = getUID(name)
 		PATRONS[uid].role = 0
-		if (mutationlists.users_to_mute.indexOf(name)>-1){
+		if (mutationlists.users_to_mute[uid]){
 			userMute({uid: uid, duration: 0, name: name})
 		}
 		return
 	};
 	if (pattern_muted.test(msg)){
 		var name = msg.slice(6,msg.length-16)
-		if (mutationlists.users_to_staff[name]){
-			setStaff({name: name})
+		var uid = getUID(name)
+		delete mutationlists.users_to_mute[uid]
+		if (mutationlists.users_to_staff[uid]){
+			setStaff({uid: uid})
 		}
-		getBansAndMutes()
+		setTimeout(getBansAndMutes,2000)
 		return
 	};
 	if (pattern_banned.test(msg)){
-		getBansAndMutes()
+		setTimeout(getBansAndMutes,2000)
 		return
 	}
 	if (pattern_staff.test(msg)){
@@ -1605,7 +1613,7 @@ function surveillance(mutation){
 		var dj = role==="DJ"
 		var name = msg.split(" ").slice(1,-(3+~~dj)).join(" ")
 		var uid = getUID(name)
-		delete mutationlists.users_to_staff[name]
+		delete mutationlists.users_to_staff[uid]
 		PATRONS[uid].role = ["","DJ","bouncer","manager","co-host","host"].indexOf(role)
 		return
 	};
@@ -1635,35 +1643,19 @@ function createEye(){
 
 			// ON-EVENT FUNCTIONS
 function waitlistUpdate(){
-	/* Gets an updated waitlist and checks if it reduced in length to check for dropped users. */
-	wlc = API.getWaitList()
-	wlcn = []
-	for (i = 0; i<wlc.length; i++) {
-		wlcn[i] = wlc[i].username
-	}
-	if (wlpn.length>wlcn.length){
-		droppedUsers()
-	}
-	wlpn = wlcn
-	return
-};
-
-function droppedUsers(){
-	/* 
-	Checks if any of the usernames in a previous (before wait_list_update event) wait list
-	are missing in the current wait list, also checking if that user is not a current dj.
-	If anyone is missing — writes down their username, last position, time and date object
-	*/
-	for (i = 0; i < wlpn.length; i++) {
-		if (wlcn.indexOf(wlpn[i])<0 && wlpn[i]!==API.getDJ().username) {
-			var date = new Date()
-			var hour = date.getHours()
-			var min = date.getMinutes()
-			dropped_users_list[wlpn[i]] = [i+1, hour, min, date]
+	/* Gets an updated waitlist and checks if it reduced in length to check for dropped users.
+	If reduced, checks which user ID has been removed from the waitlist to record as "dropped". */
+	var newlist = API.getWaitList().map(function(elem){return elem.id})
+	if (WAITLIST.length>newlist.length){
+		for (var i=0; i<WAITLIST.length; i++){
+			if (newlist.indexOf(WAITLIST[i])<0 && WAITLIST[i] != API.getDJ().id){
+				DROPPED[WAITLIST[i]] = [Date.now(),i+1]
+			}
 		}
 	}
+	WAITLIST = [].concat(newlist) // To make sure it is copied and not referenced.
 	return
-};
+}			
 
 function mehSkip(){
 	/* Skips the awful awful track. */
@@ -1688,6 +1680,7 @@ function songlistUpdate(){
 	Two date fields are required to show the actual last played date, not the one
 	that is "now", since the list is updated at the beginning of a song.
 	*/
+	if (!API.getMedia()){return}
 	var found = false
 	var song=API.getMedia()
 	var authorlower = song.author.toLowerCase()
@@ -1715,11 +1708,9 @@ function songlistUpdate(){
 
 function checkDJ(object){
 	/* Removes current dj from left users list and resets rolls count. */
-	if (!('dj' in object)){return}
-	if (object.dj.username in dropped_users_list) {
-		delete dropped_users_list[object.dj.username]
-	}
+	if (!(object.dj)){return}
 	PATRONS[object.dj.id].rolls = 0
+	delete DROPPED[object.dj.id]
 	return
 };
 
@@ -1730,6 +1721,7 @@ function statisticUpdate(){
 	some sort of linear prediciton algorithm will be made up to tell how long,
 	approximately, the user has to wait until it's his turn to dj.
 	*/
+	if (!API.getMedia()){return}
 	var dur = API.getMedia().duration
 	var queue = API.getWaitList().length
 	var time = new Date()
@@ -1741,7 +1733,7 @@ function statisticUpdate(){
 
 function mrazotaCheck(){
 	/* If the track is way too long while people are in queue — skips it. */
-	if (!(SETTINGS.mrazota)){return}
+	if (!(SETTINGS.mrazota && API.getMedia())){return}
 	var dur = API.getMedia().duration
 	var queue = API.getWaitList().length
 	if (dur >= 6000 && queue > 1) {
@@ -1751,7 +1743,7 @@ function mrazotaCheck(){
 };
 
 function addTweek(data){
-	if (!findInQueue(5121031)[0] && SETTINGS.addtweek && data.dj.id!=5121031){
+	if (!findInQueue(5121031)[0] && SETTINGS.addtweek && data.dj && data.dj.id!=5121031){
 		API.moderateAddDJ('5121031')
 	}
 	return
@@ -1763,7 +1755,7 @@ function sameArtist(){
 	'songlist' stores times of the two latest plays, so if both are less than 3 hours old, then the same
 	song has played recently.
 	*/
-	if (!SETTINGS.sameartist){return}
+	if (!(SETTINGS.sameartist && API.getMedia())){return}
 	var date = new Date()
 	var hrs = date.getHours()
 	if (hrs > 0 && hrs < 8){
@@ -1805,6 +1797,7 @@ function reallyLockWaitList(){
 };
 
 function removeFromList(){
+	if (API.getWaitList().length===0){return}
 	var uid = API.getWaitList().slice(-1)[0].id
 	if (PATRONS[uid].leave[1]){
 		API.moderateRemoveDJ(uid)
@@ -1814,6 +1807,7 @@ function removeFromList(){
 };
 
 function tagPlayed(){
+	if (!API.getDJ()){return}
 	var uid = API.getDJ().id
 	if (PATRONS[uid].leave[0]){
 		PATRONS[uid].leave[1] = true
@@ -2294,7 +2288,7 @@ function findInQueue(uid){
 	return [!q.every(function(user){i++; return user.id!=uid}),i]
 };
 
-function getUID(name){
+function getUID(name, online){
 	var users = API.getUsers()
 	var uid
 	if (name[0]==="@"){var name = name.slice(1)}
@@ -2455,12 +2449,16 @@ function kittChats(data){
 	/* Tracks messages from bot and acts if needed. */
 	var p_lastpos = /is not in the list. Sorry.$/
 	var p_wakeup = /wake up!$/
+	var p_hangman = /(That letter has already been guessed!)|(Sorry, no such letter in the word!)|(Sorry, that's not the word!)/
 	console.log(data.cid)
 	if (p_lastpos.test(data.message)){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},2000)
 	}
 	if (p_wakeup.test(data.message)){
 		API.moderateDeleteChat(data.cid)
+	}
+	if (p_hangman.test(data.message)){
+		setTimeout(API.moderateDeleteChat,5000,data.cid)
 	}
 	return
 };
@@ -2532,12 +2530,9 @@ function moveInList(UPN){
 	that needs to be passed. At least uid or name has to be given. */
 	var uid = UPN.uid || getUID(UPN.name)
 	var name = UPN.name || getName(UPN.uid)
-	while (mutationlists.users_to_add.indexOf(name)!=-1){ // Remove all elements that have that name
-		mutationlists.users_to_add.splice(mutationlists.users_to_add.indexOf(name),1)
-	}
-	if (mutationlists.users_to_move[name] && findInQueue(getUID(name))[1]>=mutationlists.users_to_move[name][1]){
-		API.moderateMoveDJ(mutationlists.users_to_move[name][0],mutationlists.users_to_move[name][1])
-	} else {delete mutationlists.users_to_move[name]}
+	if (mutationlists.users_to_move[uid] && findInQueue(uid)[1]>mutationlists.users_to_move[uid]){
+		API.moderateMoveDJ(uid,mutationlists.users_to_move[uid])
+	} else {delete mutationlists.users_to_move[uid]}
 	
 	if (UPN.position){
 		API.moderateMoveDJ(uid,UPN.position)
@@ -2551,9 +2546,6 @@ function userMute(UDN){
 	var uid = UDN.uid || getUID(UDN.name)
 	var duration = [API.MUTE.SHORT,API.MUTE.MEDIUM,API.MUTE.LONG][UDN.duration]
 	API.moderateMuteUser(uid,1,duration)
-	while (mutationlists.users_to_mute.indexOf(UDN.name)!=-1){ // Remove all elements that have that name
-		mutationlists.users_to_mute.splice(mutationlists.users_to_mute.indexOf(UDN.name),1)
-	}
 	return
 };
 
@@ -2565,8 +2557,8 @@ function staffMute(UDN){
 	var uid = UDN.uid || getUID(UDN.name)
 	var name = UDN.name || getName(UDN.uid)
 	var role = API.getUser(UDN.uid).role
-	mutationlists.users_to_mute.push(name)
-	mutationlists.users_to_staff[name]=[uid,role]
+	mutationlists.users_to_mute[uid] = true
+	mutationlists.users_to_staff[uid]=role
 	API.moderateSetRole(uid,0)
 	setTimeout(function(){if (API.getUser(uid).role!=role){API.moderateSetRole(uid,role)}},2000)
 	return
@@ -2599,8 +2591,8 @@ function setStaff(URN){
 		API.moderateSetRole(uid,URN.role)
 		return
 	}
-	if (mutationlists.users_to_staff[URN.name]){
-		API.moderateSetRole(mutationlists.users_to_staff[URN.name][0],mutationlists.users_to_staff[URN.name][1])
+	if (mutationlists.users_to_staff[URN.uid]){
+		API.moderateSetRole(URN,uid,mutationlists.users_to_staff[URN.uid])
 	}
 	return
 };
@@ -2682,6 +2674,7 @@ function patronLeave(user){
 };
 
 function patronPlayed(data){
+	if (!data.dj){return}
 	PATRONS[data.dj.id].songplays += 1
 	return
 };
@@ -2691,6 +2684,7 @@ function patronScore(){
 	var meh = SCORE.meh
 	var grab = SCORE.grab
 	var uid = SCORE.uid
+	if (!uid){return}
 	PATRONS[uid].woots += woot
 	PATRONS[uid].grabs += grab
 	PATRONS[uid].mehs += meh
@@ -2737,66 +2731,21 @@ function hangmanChat(data){
 	/* Handles hangman-related chats. */
 	var msg = data.message
 	var uname = data.un
+	var uid = data.uid
 	if (msg.split(" ")[0]==="!letter" || msg.split(" ")[0]==="!lt"){
 		hangman(msg.split(" ")[1].toLowerCase(),"letter",uname)
+		PATRONS[uid].samecommand = 0
 	};
 	if (msg.split(" ")[0]==="!word" || msg.split(" ")[0]==="!wd"){
 		hangman(msg.split(" ")[1].toLowerCase(),"word",uname)
+		PATRONS[uid].samecommand = 0
 	};
-	if (msg==="!hangstop" && assertPermission(data.uid,0)){
+	if (msg==="!hangstop" && assertPermission(data.uid,4)){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
 		hangcount = 0
 		API.off(API.CHAT, hangchat)
-	};
-};
-
-function hangmanConsole(chat,type,name){
-	// same as the other one, just for "/" commands and outputs in console. Debugging-debugging.
-	wrd = hangmanword
-	wrdg = hangmanwordg
-	indc = []
-	if (type==="word"){
-		if (chat.toLowerCase()==wrd.toLowerCase()){
-			wrdg = wrd
-		} else{
-			console.log("Sorry, that's not the word!")
-		}
-	};
-	if (type==="letter"){
-		if (wrdg.toLowerCase().indexOf(chat)>-1){
-			console.log("That letter has already been guessed!")
-		} else{
-			indc = letind(wrd.toLowerCase(), chat.toLowerCase())
-			if (indc.length>0){
-				console.log("Correct!")
-				for (i=0; i<indc.length; i++){
-					wrdg = wrdg.substr(0,indc[i]*2)+wrd[indc[i]]+wrdg.substr(indc[i]*2+1)
-				}
-				setTimeout(function(){console.log(wrdg)},(250))
-			} else{
-				console.log("Sorry, no such letter in the word!")
-			}
-		}
-	};
-	hangmanwordg = wrdg	
-	if (wrdg===wrd || wrdg.indexOf("_")==-1){
-		setTimeout(function(){console.log("Congratulations @"+name+", you have won! The word was: "+wrd)},(400))
-		mode = "normal"
-		hangmanword = ""
-		hangmanwordg = ""
-		API.off(API.CHAT_COMMAND, hangcommands);
-	};
-};
-
-function hangmanCommands(command){
-	// Yep, you got it.
-	if (command.slice(0,7)==="/letter"){
-		hangmanconsole(command.slice(8,command.length),"letter","fr")
-	};
-	if (command.slice(0,5)==="/word"){
-		hangmanconsole(command.slice(6,command.length),"word","fr")
 	};
 };
 
@@ -2822,7 +2771,7 @@ function hangman(chat,type,name){
 				for (i=0; i<indc.length; i++){
 					wrdg = wrdg.substr(0,indc[i]*2)+wrd[indc[i]]+wrdg.substr(indc[i]*2+1)
 				}
-				setTimeout(function(){API.sendChat(wrdg)},250)
+				if (wrdg.indexOf("_")>=0){setTimeout(function(){API.sendChat(wrdg)},250)}
 			} else{
 				API.sendChat("Sorry, no such letter in the word!")
 				hangcount++
@@ -2833,6 +2782,8 @@ function hangman(chat,type,name){
 	hangmanwordg = wrdg	
 	if (wrdg===wrd || wrdg.indexOf("_")===-1){
 		setTimeout(function(){API.sendChat("Congratulations @"+name+", you have won! The word was: "+wrd)},(250))
+		var uid = getUID(name)
+		PATRONS[uid].hangmanwords++
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
@@ -2929,6 +2880,7 @@ function Patron(id){
 		// games
 	this.roulette = 0
 	this.rouletterecord = 0
+	this.hangmanwords = 0
 };
 
 			// STACKOVERFLOW SOLUTIONS
