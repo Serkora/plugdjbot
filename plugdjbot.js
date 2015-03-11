@@ -23,7 +23,7 @@ BOT_ROOM = "dvach"
 
 	// Global variables declaration.
 var STATE
-var MasterList = [3737285, 4856012, 5659102]	// List of user ids that can fully control the bot.
+var MasterList = [4702482, 3737285, 4856012, 5659102]	// List of user ids that can fully control the bot.
 var IgnoreList = []										// List is users to ignore some commands from. Should probably be in the localStorage.
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var mutationlists = Object.create(null)					// Object to hold all the arrays and objects the MutationObserver should refer to.
@@ -38,7 +38,7 @@ var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
 
 // What type of commands to respond to or actions to take.
 var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true,
-				autocycle: true, mrazota: true, sameartist: true, setstaff: true,
+				autocycle: true, mrazota: true, sameartist: true, setstaff: true, spam: true,
 				stuck: true, disabled: [], games: {hangman: true, russian: true}}
 // Some of the settings can only be changed by a few chosen people.
 Object.defineProperties(SETTINGS,{
@@ -152,7 +152,7 @@ var chatsglob = [[Date.now(),0],[Date.now(),0]];
 
 mutationlists.users_to_add = Object.create(null);							// Objects Mutation Observer checks after a pattern match.
 mutationlists.users_to_move = Object.create(null);
-mutationlists.users_to_mute = [];
+mutationlists.users_to_mute = Object.create(null);
 mutationlists.users_to_staff = Object.create(null);
 mutationlists.users_to_destaff = Object.create(null);
 mutationlists.user_to_skipadd = null
@@ -911,52 +911,6 @@ chatTools = {
 		this.lp = this.lastplayed
 		this.bugreport = this.message
 	}
-	, lastpos_old: function(uid, name, target/*, *target */){
-		/* 
-		Move the users to the position they was at before dropping from plug.dj.
-		Extracts the userID for the required person, checks if they are already in the wait list,
-		adds them to the arrays Mutation Observer refers to and calls either addDJ or moveDJ functions.
-		Then in 3 seconds checks if everything was done successfully, sending chat message if not.
-		*/
-		if (target){
-			var target = argumentsSlice(arguments,2)
-			var name = getName(getUID(target)) || target
-		}
-		if (name in dropped_users_list) {
-			var place = parseInt(dropped_users_list[name][0])
-			var queue = API.getWaitList()
-			if (findInQueue(uid)[0]){
-				if (findInQueue(uid)[1]<=place){return}
-				mutationlists.users_to_move[name]=[uid,place]
-				API.moderateMoveDJ(uid,place)
-				setTimeout(function(){
-					if (mutationlists.users_to_move[name]) {
-						API.sendChat("Unable to move @"+name+". Refresh the page and try again. Your last position was "+place)
-						delete mutationlists.users_to_move[name]
-					}
-				},3000)
-			} else {
-				mutationlists.users_to_add.push(name)
-				mutationlists.users_to_move[name]=[uid,place]
-				API.moderateAddDJ(uid)
-				setTimeout(function(){
-					if (mutationlists.users_to_add.indexOf(name)>-1){
-						API.sendChat("Unable to add @"+name+" to wait list. Refresh the page and try again. Your last position was "+place)
-						return
-					}
-					if (mutationlists.users_to_move[name]){
-						API.sendChat("Unable to move @"+name+". Refresh the page and try again. Your last position was "+place)
-					}
-					delete mutationlists.users_to_move[name]
-					while (mutationlists.users_to_add.indexOf(name)!=-1){
-						mutationlists.users_to_add.splice(users_to_add.indexOf(name),1)
-					}
-				},3000)
-			}
-		} else {
-			API.sendChat("@"+name+" is not in the list. Sorry.")
-		}
-	}
 	, lastpos: function(uid, name, target/*, target */){
 		/* 
 		Move the users to the position they was at before dropping from plug.dj.
@@ -966,7 +920,10 @@ chatTools = {
 		*/
 		if (target){
 			var target = argumentsSlice(arguments,2)
-			if (target==="_chat"){API.sendChat(name+"'s place was "+DROPPED[uid][1]+" on "+String(new Date(DROPPED[uid][0]))); return}
+			if (target==="_chat"){
+				if (!DROPPED[uid]){API.sendChat(name+" is not in the list of disconnected users."); return}
+				API.sendChat(name+"'s place was "+DROPPED[uid][1]+" on "+String(new Date(DROPPED[uid][0]))); return
+			}
 			var tid = getUID(target)
 			var target = getName(tid) || target
 			if (!tid){API.sendChat("Invalid name '"+target+"'"); return}
@@ -1014,7 +971,7 @@ chatTools = {
 		/* Skips the tracks immediately or after a certain period. If the video was unavailable,
 		will push the dj to the head of the queue. */
 		if (!(assertPermission(uid,2) || API.getDJ().id === uid)){console.log("no skip for you!");return}
-		if (!arg || +arg <= 0){
+		if (!arg || +arg <= 0.3){
 			if (Date.now() - SKIPS.last<5000){console.log("not so fast");return}
 			API.moderateForceSkip()
 			SKIPS.last = Date.now()
@@ -1059,8 +1016,7 @@ chatTools = {
 	, boooring: function(uid, name){
 		/* Skips longs tracks. */
 		var dur = API.getMedia().duration
-		var score = API.getScore()
-		if (dur>660 && score.negative>0 && (score.negative/score.positive)>1.5)	{
+		if (dur>660 && enoughToSkip("loong")){
 			API.sendChat("Track is too long. Skipping")
 			API.moderateForceSkip()
 		}
@@ -1162,6 +1118,7 @@ chatTools = {
 			} else {
 				staffMute({uid: tid, duration: duration})
 			}
+			API.sendChat("@"+target+", you've been muted for "+(duration+1)*15+" minutes.")
 		} else {
 			var dur = Number(argumentsSlice(arguments,-1))
 			if (isNaN(dur) || dur<0.3){API.sendChat("Invalid duration"); return}
@@ -1393,10 +1350,12 @@ chatFun = {
 	}
 	, tweek: function(uid, name, target/*, *target, number */){
 		/* Sends one of the legendary tweek phrases. */
-		var index = Math.floor((tweek.length+arguments[arguments.length-1]-1)%tweek.length) || Math.floor(Math.random()*tweek.length)
-		var cind = !isNaN(+arguments[arguments.length-1]) ? 1 : 0
+		var n = +arguments[arguments.length-1]
+// 		if (!isNaN(n) && (n<-10000 || n > 10000)){return}
+		var tind = n > 0 ? Math.floor((n-1)%tweek.length) : (Math.floor(n)%tweek.length + tweek.length)%tweek.length
+		var index = isNaN(n) ? Math.floor(Math.random()*tweek.length) : tind
 		if (target && isNaN(+target)){
-			var target = argumentsSlice(arguments,2,arguments.length-cind)
+			var target = argumentsSlice(arguments,2,arguments.length-(n!=NaN))
 			target = getName(getUID(target)) || target
 			target = "@" + target + " "
 		} else {var target = ""}
@@ -1588,7 +1547,7 @@ function surveillance(mutation){
 		var uid = getUID(name)
 		PATRONS[uid].role = 0
 		if (mutationlists.users_to_mute[uid]){
-			userMute({uid: uid, duration: 0, name: name})
+			userMute({uid: uid, duration: mutationlists.users_to_mute[uid][1], name: name})
 		}
 		return
 	};
@@ -1905,9 +1864,9 @@ function recordSkip(mod,mix){
 function clearDroppedUsers(){
 	/* If the user was present in this array for more than 30 minutes — remove them. */
 	var date = new Date()
-	for (var key in dropped_users_list) {
-		if ((date - dropped_users_list[key][3])/60000>=30) {
-			delete dropped_users_list[key]
+	for (var key in DROPPED) {
+		if ((date - DROPPED[key][0])/60000>=30) {
+			delete DROPPED[key]
 		}
 	}
 	return
@@ -1991,7 +1950,7 @@ function checkStuck(){
 };
 
 			// SUPPORTING FUNCTIONS
-function deepObject(object,property){if (object[property]){return object[property] = object[property]}};
+function deepObject(object,property){if (object[property] !== undefined){return object[property] = object[property]}};
 
 function argumentsSlice(object, start, stop){
 	/* Recursive slice of 'arguments' object to join the necessary properties into one string. 
@@ -2300,8 +2259,8 @@ function getUID(name, online){
 		}
 	}
 	if (!exactname){
-		var pattern = name.toLowerCase().replace(/[\s]+/g,"[\s]*").replace(/[eе]/g,"[eе]").replace(/[il]/g,"[il]").replace(/[сc]/g,"[cс]")
-		pattern = pattern.replace(/[oо]/g,"[oо]").replace(/[аa]/g,"[aа]").replace(/[tт]/g,"[tn]").replace(/[уy]/g,"[yу]")
+		var pattern = name.toLowerCase().replace(/[\s]+/g,"[\s]*").replace(/[.]+/g,"[.]*").replace(/[eе]/g,"[eе]").replace(/[il]/g,"[il]")
+		pattern = pattern.replace(/[oо]/g,"[oо]").replace(/[аa]/g,"[aа]").replace(/[tт]/g,"[tт]").replace(/[уy]/g,"[yу]").replace(/[сc]/g,"[cс]")
 		pattern = pattern.replace(/[kк]/g,"[kк]").replace(/[hн]/g,"[hн]").replace(/[bв]/g,"[bв]").replace(/[xх]/g,"[xх]").replace(/[mм]/g,"[мm]")
 		pattern = new RegExp(pattern,'i')
 		users.forEach(function(elem){
@@ -2309,6 +2268,8 @@ function getUID(name, online){
 				if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
 					return String.fromCharCode(letter.charCodeAt(0)-65248)
 				} else if (letter.charCodeAt(0)==65279){
+					return ""
+				} else if (letter==="."){
 					return ""
 				} else {
 					return letter
@@ -2322,6 +2283,8 @@ function getUID(name, online){
 					if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
 						return String.fromCharCode(letter.charCodeAt(0)-65248)
 					} else if (letter.charCodeAt(0)==65279){
+						return ""
+					} else if (letter==="."){
 						return ""
 					} else {
 						return letter
@@ -2422,13 +2385,17 @@ function disableSetting(uid/*, 'setting' args*/){
 	return
 };
 
-function enoughToSkip(){
+function enoughToSkip(loong){
 	var score = API.getScore()
 	var users = API.getUsers()
 	var grey = 0
 	users.forEach(function(elem){if (elem.role<=1){grey++}})
 	if (API.getTimeElapsed()<10){return false}
-	return score.negative >= (Math.floor(score.positive*1.25)+Math.floor(grey/5)+3)
+	if (loong){
+		return score.negative >= (Math.floor(score.positive*1)+Math.floor(grey/5)+2)
+	} else {
+		return score.negative >= (Math.floor(score.positive*1.25)+Math.floor(grey/5)+3)
+	}
 };
 
 function skipMix(songid, duration, name){
@@ -2450,7 +2417,7 @@ function kittChats(data){
 	var p_lastpos = /is not in the list. Sorry.$/
 	var p_wakeup = /wake up!$/
 	var p_hangman = /(That letter has already been guessed!)|(Sorry, no such letter in the word!)|(Sorry, that's not the word!)/
-	console.log(data.cid)
+// 	console.log(data.cid)
 	if (p_lastpos.test(data.message)){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},2000)
 	}
@@ -2501,6 +2468,10 @@ function fixLinksAndEmoji(message){
 
 function checkSpam(uid, name, command){
 	/* Checks if the last 5 commands from a user were the same. If that's the case, mutes them for 15 mniutes. */
+	if (ALLCOMMANDS.check(command)>-1){
+		PATRONS[uid].commands += 1
+	}
+	if (!SETTINGS.spam){return}
 	if (command===PATRONS[uid].lastcommand) {
 		PATRONS[uid].samecommand++
 	} else {
@@ -2517,10 +2488,6 @@ function checkSpam(uid, name, command){
 		userMute({uid: uid, duration: 1})
 		return
 	};
-	
-	if (ALLCOMMANDS.check(command)>-1){
-		PATRONS[uid].commands += 1
-	}
 	return
 }
 
@@ -2557,12 +2524,12 @@ function staffMute(UDN){
 	var uid = UDN.uid || getUID(UDN.name)
 	var name = UDN.name || getName(UDN.uid)
 	var role = API.getUser(UDN.uid).role
-	mutationlists.users_to_mute[uid] = true
+	mutationlists.users_to_mute[uid] = [true,UDN.duration]
 	mutationlists.users_to_staff[uid]=role
 	API.moderateSetRole(uid,0)
 	setTimeout(function(){if (API.getUser(uid).role!=role){API.moderateSetRole(uid,role)}},2000)
 	return
-}
+};
 
 function userBan(UDN){
 	/* Ban a user for a given duration. UDN stands for UID, Duration, Name — three properties of argument object that
@@ -2833,8 +2800,9 @@ function russianRoulette(uid, name, argument){
 		PATRONS[uid].roulette = 0
 		API.sendChat("/me @"+name+" BANG!")
 		var role = API.getUser(uid).role
-		if (role>0) {staffMute({uid: uid, duration: 1}) 
-		} else {userMute({uid: uid, duration: 1})}
+		if (role>0) {staffMute({uid: uid, duration: 0}) 
+		} else {userMute({uid: uid, duration: 0})}
+		setTimeout(function(){API.sendChat("@"+name+" You've been muted for 15 minutes.")},250)
 	} else {
 		PATRONS[uid].roulette = PATRONS[uid].roulette+1
 		if (PATRONS[uid].roulette>PATRONS[uid].rouletterecord){
