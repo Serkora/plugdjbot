@@ -707,7 +707,7 @@ function chatClassifier(message){
 	}
 	
 		// Check for spam.
-	checkSpam(uid, name, command)
+	if (checkSpam(uid, name, command)){return}
 	
 		// If kittex is trying to use the bot, along with an action (if proper command was given) will also piss on him.
 	if (name==="SomethingNew"){				
@@ -1392,13 +1392,13 @@ chatFun = {
 		Cannot have '!' or '/' at the beginning of a response, except for "/me". */
 		if (!(command && response)) {return}
 		if ((response[0]==="!" || response[0]==="/") && response != "/me"){
-			API.sendChat("You can't start the response with '/' or '!'")
+			API.sendChat("You can't start the response with '/' or '!'.")
 			return
 		}
 		var command = command.toLowerCase()
 		if (command[0]==="!"){command = command.slice(1)}
 		if (command in chatUser){
-			API.sendChat("That command already exists")
+			API.sendChat("That command already exists.")
 			return
 		}
 		var response = argumentsSlice(arguments,3)	
@@ -1412,10 +1412,24 @@ chatFun = {
 		/* Make KITT say whatever you want him to say. Can be used to anonymously tell Omichka that you are in love with her. 
 		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". */
 		if (at==="-r"){
-			var text = "@"+argumentsSlice(arguments,3)
+			var longest = 0
+			var name, length
+			API.getUsers().forEach(function(elem){if (elem.username.split(" ").length > longest){longest = elem.username.split(" ").length}})
+			var possible_name = argumentsSlice(arguments,3,3+longest)
+			for (var i=longest; i>=1; i--){
+				name = possible_name.split(" ").slice(0,i+1).join(" ")
+				var tid = getUID(name, true)
+				if (tid){length = i; console.log(length); break}
+			}
+			if (!tid){
+				var text = "@"+argumentsSlice(arguments,3)
+			} else {
+				name = getName(tid)
+				var text = "@"+name+" "+argumentsSlice(arguments,3+length)
+			}
 		} else {
 			var text = argumentsSlice(arguments,2)
-			if ((text[0]==="!" || text[0]==="/") && arguments[2] != "/me" ){return}
+			if ((text[0]==="!" || text[0]==="/") && at != "/me" && !assertPermission(uid,0)){return}
 		}
 		API.sendChat(text)
 		return
@@ -1964,6 +1978,15 @@ function argumentsSlice(object, start, stop){
 		return object[start]
 	}
 };
+
+function copyObject(object){
+	var copy = Object.create(null)
+	for (var key in object){
+		copy[key] = object[key]
+	}
+	if (object.length != undefined){copy.length = object.length}
+	return copy
+}
 			
 function compareSongInList(songinlist, songplaying){
 	/* Compares the currently playing song to the one in list to find if it had been already played. Currently not in use. */
@@ -2277,6 +2300,7 @@ function getUID(name, online){
 			}).join("").replace(/[\s]+/g,"")
 			if (pattern.test(username)){uid = elem.id}
 		})
+		if (!uid && online){return false}
 		if (!uid){
 			for (var key in PATRONS){
 				var username = PATRONS[key].name.split("").map(function(letter){
@@ -2471,7 +2495,7 @@ function checkSpam(uid, name, command){
 	if (ALLCOMMANDS.check(command)>-1){
 		PATRONS[uid].commands += 1
 	}
-	if (!SETTINGS.spam){return}
+	if (!SETTINGS.spam){return false}
 	if (command===PATRONS[uid].lastcommand) {
 		PATRONS[uid].samecommand++
 	} else {
@@ -2482,13 +2506,13 @@ function checkSpam(uid, name, command){
 	
 	if (PATRONS[uid].samecommand === 4) {
 		API.sendChat("@"+name+" If you send the same command once more, divine punishment will befall you.")
-		return
+		return true
 	};
 	if (PATRONS[uid].samecommand >= 5) {
 		userMute({uid: uid, duration: 1})
-		return
+		return true
 	};
-	return
+	return false
 }
 
 			// MODERATION
