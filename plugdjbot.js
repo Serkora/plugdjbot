@@ -8,8 +8,7 @@
 
 /* 
 TO DO:
-4. Swearing filter.
-5. Song titles filtering/fixing.
+5. Song titles filtering/fixing. (add video-id array, (and|ft[.]*|&), case-independent, artist-title switched up)
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
 10. !iwanttocycleevenwithdjcycleturnedoff
 */
@@ -162,7 +161,8 @@ mutationlists.connectionCID = null
 /* 
 Only for reference, the actual 'localstoragekeys' variable is also loaded from localStorage.
 var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks','allissuedcommands',
- 						'dictru','dicteng','tweek','atresponses','bugreports','VALENTINES','PATRONS','EMOJIDICT','chatUser'] 
+ 						'dictru','dicteng','tweek','atresponses','bugreports','VALENTINES','PATRONS',
+ 						'EMOJIDICT','chatUser','SKIPS', 'SWEARS'] 
 */ 					
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
@@ -232,6 +232,7 @@ botStart = function(){
 	API.on(API.CHAT, function(message){
 		prev_chat_uid = this_chat_uid
 		this_chat_uid = message.uid
+		swearingCheck(message)
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
@@ -1410,7 +1411,9 @@ chatFun = {
 	}
 	, relay: function(uid, name, at,/* *target, */ text/*, *text */){
 		/* Make KITT say whatever you want him to say. Can be used to anonymously tell Omichka that you are in love with her. 
-		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". */
+		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". 
+		The way username is obtained out is the following: first, check what is the current longest name in the room (in words),
+		then slice that many words from arguments. Starting from the longest, try to get the UID. If found — break the loop.*/
 		if (at==="-r"){
 			var longest = 0
 			var name, length
@@ -1493,6 +1496,11 @@ chatVarious = {
 		/* Toggle KITT's persistence in adding tweek to the waitlist. */
 		global_uid = uid
 		SETTINGS.addtweek = Boolean(SETTINGS.addtweek^true)
+		return
+	}
+	, sweartest: function(uid, name, text/*, *text */){
+		var text = argumentsSlice(arguments, 2)
+		swearingCheck({message: text, un: name}, true)
 		return
 	}
 };
@@ -1986,7 +1994,49 @@ function copyObject(object){
 	}
 	if (object.length != undefined){copy.length = object.length}
 	return copy
-}
+};
+
+function nameReplacement(name){
+	var ret = name.toLowerCase()
+	for (var key in name_replacement_map){
+		ret = ret.replace(new RegExp(key,'g'),name_replacement_map[key])
+	}
+	return ret
+};
+
+function swearingCheck(chatobj, test){
+	var text = chatobj.message
+	var swear = false
+	var test = test ? "TEST" : ""
+	for (var i=0; i<swearing_list_compiled.length; i++){
+		var pattern = new RegExp(swearing_list_compiled[i],'i')
+		if (pattern.test(text)){swear = true; break}
+	}
+	if (swear){
+		// check for type I errors and fix recursively.
+		var word
+		for (var i=0; i<swearing_list_exceptions.length; i++){
+			if (text.indexOf(swearing_list_exceptions[i])>-1){
+				word = swearing_list_exceptions[i]
+				text = text.slice(0,text.indexOf(word))+text.slice(text.indexOf(word)+word.length)
+				return swearingCheck({message: text, un: chatobj.un}, !!test)
+			}
+		}
+	}
+	if (swear){
+		// Log everything.
+		var date = new Date()
+		var match = text.match(pattern)
+		var time = date.getDate()+"/"+(date.getMonth()+1)+" "+date.getHours()+":"+date.getMinutes()
+		if (text.indexOf("!sweartest")<0){
+			SWEARS.push([time, chatobj.un, test, text, pattern, match.join("; ")])
+		}
+		if (test){API.sendChat("That's a swear word.")}
+	} else if (test){
+		SWEARS.push([time, chatobj.un, test, text, "NOT A SWEAR"])
+	}
+	return !test&&swear
+};
 			
 function compareSongInList(songinlist, songplaying){
 	/* Compares the currently playing song to the one in list to find if it had been already played. Currently not in use. */
@@ -2282,10 +2332,7 @@ function getUID(name, online){
 		}
 	}
 	if (!exactname){
-		var pattern = name.toLowerCase().replace(/[\s]+/g,"[\s]*").replace(/[.]+/g,"[.]*").replace(/[eе]/g,"[eе]").replace(/[il]/g,"[il]")
-		pattern = pattern.replace(/[oо]/g,"[oо]").replace(/[аa]/g,"[aа]").replace(/[tт]/g,"[tт]").replace(/[уy]/g,"[yу]").replace(/[сc]/g,"[cс]")
-		pattern = pattern.replace(/[kк]/g,"[kк]").replace(/[hн]/g,"[hн]").replace(/[bв]/g,"[bв]").replace(/[xх]/g,"[xх]").replace(/[mм]/g,"[мm]")
-		pattern = new RegExp(pattern,'i')
+		var pattern = new RegExp(nameReplacement(name),'i')
 		users.forEach(function(elem){
 			var username = elem.username.split("").map(function(letter){
 				if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
@@ -2874,6 +2921,40 @@ function Patron(id){
 	this.rouletterecord = 0
 	this.hangmanwords = 0
 };
+
+			// RegExp replacements.
+var name_replacement_map = {'[\\s]+':"[\\s]*", '[.]+': "[.]*", '[аa]+': "[аa]+", '[bв]+': "[bв]+", '[сc]+': "[сc]+", '[d]+': "[d]+",
+	'[eе]+': "[eе]+", '[f]+': "[f]+", '[hн]+': "[hн]+", '[il]+': "[il]+", '[j]+': "[j]+", '[kк]+': "[kк]+", '[mм]+': "[mм]+",
+	'[nп]+': "[nп]+", '[oо]+': "[oо]+", '[pр]+': "[pр]+", '[q]+': "[q]+", '[rг]+': "[rг]+", '[s]+': "[s]+", '[tт]+': "[tт]+",
+	'[u]+': "[u]+", '[v]+': "[v]+", '[w]+': "[w]+", '[xх]+': "[xх]+", '[уy]+': "[уy]+", '[z]+': "[z]+", '[д]+': "[д]+", 
+	'[ё]+': "[ё]+", '[ж]+': "[ж]+", '[з]+': "[з]+", '[и]+': "[и]+", '[й]+': "[й]+", '[л]+': "[л]+", '[ф]+': "[ф]+", 
+	'[ц]+': "[ц]+", '[ч]+': "[ч]+", '[ш]+': "[ш]+", '[щ]+': "[щ]+", '[ьъ]+': "[ьъ]+", '[ы]+': "[ы]+", '[э]+': "[э]+", 
+	'[ю]+': "[ю]+", '[я]+': "[я]+", };
+
+var swearing_replacement_map = {'[аa]+': "[аa]+[\\s]*", '[бвb]+': "[бвb]+[\\s]*", '[гrg]+': "[гrg]+[\\s]*", '[дd]+': "[дd]+[\\s]*",
+	'[её]': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж': "([жjg]+|(zh)+|(jh)+)[\\s]*", '[з]': "[3зz]+[\\s]*", '[ий]': "([ийjyieе]+|)[\\s]*",
+	'[к]': "[кk]+[\\s]*", '[л]': "([лl]+|(jl)+|(ji)+)[\\s]*", '[м]': "([мm]+|(rn)+)[\\s]*", '[н]': "[нh]+[\\s]*", '[о]': "[оo0]+[\\s]*",
+	'[п]': "[пnpр]+[\\s]*", '[р](?!\\])': "[рrp]+[\\s]*", '[с]': "[сcs]+[\\s]*", '[т]': "[тt]+[\\s]*", '[у]': "[уuy]+[\\s]*", '[ф]': "([фf]+|(ph)+)[\\s]*",
+	'[х]': "[хxh]+[\\s]*", '[ц]': "([цc]+|(ts)+)[\\s]*", '[ч]': "([ч]+|(ch)+)[\\s]*", '[ш]': "([ш]+|(sh)+)[\\s]*", '[щ]': "([щ]+|(sh)+|(sh')+[\\s]*",
+	'[ъь]': "[bъь']+[\\s]*", '[ы]': "([ыi]+|(bi)+|(bl)+)[\\s]*", '[э]': "[e]+[\\s]*", '[ю]': "([ю]+|(yu)+|(ju)+)[\\s]*", '[я]': "([яаa]+|(ya)+|(ja)+)[\\s]*"}
+
+var swearing_list_source = ['пидор', 'пидр', 'пидар', 'педик', 'бля', 'блядь', 'блять', 'сука',
+	'сучка', 'сцука', 'мудак', 'мудил', 'хуй', 'хуе', 'хуя', 'блеать', 'блеадь', 'пизд',
+	'пезд', 'говно', 'гавно', 'гавен', 'говен', 'гавён', 'говён', 'ебк','ебу', 'падла']
+
+var swearing_list_compiled = ['cerf','ыглф',',kz'].concat.apply([],swearing_list_source.map(function(elem){
+		var word = elem
+		for (var key in swearing_replacement_map){
+			var pattern = new RegExp(key,'g')
+			if (pattern.test(elem)){
+				word = word.replace(pattern,swearing_replacement_map[key])
+			}
+		}
+		return word
+}))
+
+var swearing_list_exceptions = ['требушет', 'габен', 'бляшка']
+
 
 			// STACKOVERFLOW SOLUTIONS
 /*
