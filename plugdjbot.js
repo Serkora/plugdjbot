@@ -33,18 +33,19 @@ var DROPPED = Object.create(null)						// List of users disconnected while in a 
 var PATRONS = Object.create(null)						// Contains custom user-objects.
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
 var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
+var WLCMSG = ""											// Welcome message.
 // var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from the localStorage.
 
 // What type of commands to respond to or actions to take.
 var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true,
 				autocycle: true, mrazota: true, sameartist: true, setstaff: true, spam: true,
-				stuck: true, disabled: [], games: {hangman: true, russian: true}}
+				stuck: true, welcome: true, swear: true, games: {hangman: true, russian: true}}
 // Some of the settings can only be changed by a few chosen people.
 Object.defineProperties(SETTINGS,{
 	'_addtweek':{value:false,writable:true},
 	'_locklist':{value:false,writable:true},
 	'addtweek': {
-		enumerable: true,
+// 		enumerable: true,
 		set: function(val){
 			if (assertPermission(global_uid,0) || global_uid===5121031){
 				this._addtweek = val
@@ -92,7 +93,7 @@ Object.defineProperties(SETTINGS,{
 					times.push(t)
 					localStorage.setObject('startuptimes',times)
 					API.off()
-					clearTimeouts(this,Object.keys(timeouts))
+					clearTimeouts('all')
 					WAITLIST = API.getWaitList().map(function(elem){return elem.id})
 					STATE = "running"
 					enableSetting(4702482,'all')
@@ -280,8 +281,9 @@ botStart = function(){
 	API.on(API.ADVANCE, patronPlayed);
 	API.on(API.ADVANCE, patronScore);
 	
-		/* Updates some info of a user. */
+		/* Updates some info of a user. Sends him a welcome message, if set. */
 	API.on(API.USER_JOIN, patronJoin);
+	API.on(API.USER_JOIN, welcomeUser);
 	
 	/* Updates some info of a user. */
 	API.on(API.USER_LEAVE, patronLeave);
@@ -334,7 +336,7 @@ botStart = function(){
 botIdle = function(){
 	STATE = "idle"
 	API.off(API.CHAT)
-	disableSetting(4702482,'autocycle','mehskip','mrazota')
+	disableSetting(4702482,'autocycle','mehskip','mrazota', 'stuck', 'sameartist', 'welcome', 'swear')
 	
 	console.log("idling...")
 	API.on(API.CHAT, function(data){
@@ -342,7 +344,12 @@ botIdle = function(){
 			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 			clearTimeouts("all")
 			botStart()
+			return
 		}
+		if (data.message==="!lastpos"){
+			var args = [data.uid, data.username].concat(data.message.split(" ").slice(1))
+			chatTools.lastpos.apply(this, args)
+		}		
 	})
 };
 
@@ -576,6 +583,10 @@ chatCommands = {
 		}
 		return
 	}
+	, clrvar: function(variable){
+		GLOBAL[variable] = GLOBAL[variable].constructor()
+		chatCommands.savetolocalstorage(true)
+	}
 	, loadfile: function(variable, type, save){
 		/* 'type' is either "json" or "lines", i.e. how to process the loaded file */
 		if (variable === "remove"){
@@ -753,7 +764,7 @@ chatControl = {
 		if (assertPermission(uid,3) && STATE === "running"){
 			STATE = "idle"
 			API.sendChat('I only have about 30 seconds of voice transmission left.')
-			setTimeout(botIdle,30*1000)
+			timeout.idle = setTimeout(botIdle,30*1000)
 		}
 		return
 	}
@@ -768,18 +779,18 @@ chatControl = {
 		if (!assertPermission(uid,3)){return}
 		if (setting){
 			var val = setting.split(".").reduce(deepObject,SETTINGS)
-			if (val !== undefined){API.sendChat(setting+": "+val); return}
+			if (val !== undefined){API.sendChat(setting+": "+['off','on'][+val]); return}
 		}
 		var chat = ""
 		for (var setting in SETTINGS){
 			if (SETTINGS[setting] instanceof Object){
 				chat += setting+": ["
 				for (var subsetting in SETTINGS[setting]){
-					chat += subsetting+": "+SETTINGS[setting][subsetting]+", "
+					chat += subsetting+": "+['off','on'][+SETTINGS[setting][subsetting]]+", "
 				}
 				chat = chat.slice(0,-2)+"]; "
 			} else {
-				chat += setting+": "+SETTINGS[setting]+"; "
+				chat += setting+": "+['off','on'][+SETTINGS[setting]]+"; "
 			}
 		}
 		chat = chat.slice(0,-2)+"."
@@ -829,7 +840,11 @@ chatControl = {
 	}
 	, cycle: function(uid, argument){
 		/* DJ cycle. Turn automatic toggle on or off. After being switched off, reenables itself in one hour. */
-		if (!assertPermission(uid,3)){return}
+		if (!assertPermission(uid,2)){return}
+		if (!argument){
+			toggleCycle(['enable','disable'][+DJCYCLE])
+			return
+		}
 		if (argument === "autoon"){
 			clearTimeouts("cycle")
 			SETTINGS.autocycle = true
@@ -971,7 +986,7 @@ chatTools = {
 	, skip: function(uid, name, arg){
 		/* Skips the tracks immediately or after a certain period. If the video was unavailable,
 		will push the dj to the head of the queue. */
-		if (!(assertPermission(uid,2) || API.getDJ().id === uid)){console.log("no skip for you!");return}
+		if (!(assertPermission(uid,2) || API.getDJ().id === uid)){return}
 		if (!arg || +arg <= 0.3){
 			if (Date.now() - SKIPS.last<5000){console.log("not so fast");return}
 			API.moderateForceSkip()
@@ -985,7 +1000,7 @@ chatTools = {
 			SKIPS.skipmixtime = null
 			return
 		}
-		if (arg==="error" && (API.getTimeElapsed()<15 || assertPermission(uid,2))) {
+		if (arg==="error" && (API.getTimeElapsed()<15 || (assertPermission(uid,2) && API.getDJ().id != uid) || assertPermission(uid,0))) {
 			var djname = API.getDJ().username
 			var djuid = API.getDJ().id
 			if (DJCYCLE){
@@ -1139,15 +1154,15 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		if (!tid){API.sendChat("Invalid target"); return}
+		if (!tid || tid===3737285){API.sendChat("Invalid target."); return}
 		var chat_durations =["h","d","p","hour","day","perma","h","d","permanent","h","d","forever","1","24","endless"]
 		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
 		if (duration>=0){
 			userBan({uid: tid, duration: duration})
 		} else {
 			var dur = Number(argumentsSlice(arguments,-1))
-			if (isNaN(dur) || dur<0.005){API.sendChat("Invalid duration"); return}
-			if (dur > 24){API.sendChat("Unable ban for longer than 24 hours for now. Coming soon!"); return}
+			if (isNaN(dur) || dur<0.005){API.sendChat("Invalid duration."); return}
+			if (dur > 24){API.sendChat("Unable to ban for longer than 24 hours for now. Coming soon!"); return}
 			duration = dur > 1 ? 1 : 0
 			userBan({uid: tid, duration: duration})
 			setTimeout(userUnban,dur*60*60*1000,tid)
@@ -1155,6 +1170,7 @@ chatTools = {
 		return
 	}
 	, unmute: function(uid, name, target/*, *target */){
+		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments, 2)
 		var tid = getUID(target)
 		if (!tid){API.sendChat("Invalid target"); return}
@@ -1162,6 +1178,7 @@ chatTools = {
 		return
 	}
 	, unban: function(uid, name, target/*, *target */){
+		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments, 2)
 		var tid = getUID(target)
 		if (!tid){API.sendChat("Invalid target"); return}
@@ -1262,6 +1279,19 @@ chatTools = {
 		delete VOTING.signedusers
 		API.off(API.CHAT, enlistment)
 		clearTimeouts('sing')
+	}
+	, joinmessage: function(uid, name, timeout, /* time */ text/*, *text*/){
+		if (!assertPermission(uid,3)){return}
+		if (timeout === "-t"){
+			var timeout = Number(text)*60*60*1000
+			WLCMSG = argumentsSlice(arguments,4)
+		} else {
+			WLCMSG = argumentsSlice(arguments,2)
+			var timeout = 1*60*60*1000
+		}
+		clearTimeouts('welcome')
+		timeouts.welcome = setTimeout(function(){WLCMSG = ""; return},timeout)
+		return
 	}
 };
 
@@ -1414,6 +1444,7 @@ chatFun = {
 		As with user-created commands, "!" or "/" are not accepted as the first character, except for "/me". 
 		The way username is obtained out is the following: first, check what is the current longest name in the room (in words),
 		then slice that many words from arguments. Starting from the longest, try to get the UID. If found — break the loop.*/
+		PATRONS[uid].lastcommand = null
 		if (at==="-r"){
 			var longest = 0
 			var name, length
@@ -1487,8 +1518,8 @@ chatVarious = {
 		API.sendChat("@"+target+" :chocolate_bar: :heart:")
 		return
 	}
-	, woot: function(){$('#woot').click()}
-	, meh: function(){$('#meh').click()}
+	, woot: function(uid){if (!assertPermission(uid,0)){return}; $('#woot').click()}
+	, meh: function(uid){if (!assertPermission(uid,0)){return}; $('#meh').click()}
 	, ping: function(uid, name){
 		API.sendChat("@"+name+" pong!")
 	}
@@ -1824,6 +1855,7 @@ function toggleCycle(manual){
 };
 
 function updateScore(){
+	if (!API.getDJ()){return}
 	if (API.getTimeElapsed()<3 && !SCORE.saved){
 		setTimeout(updateScore,3000)
 		return
@@ -1878,6 +1910,12 @@ function recordSkip(mod,mix){
 			SKIPS.record.push([Date.now(), text])
 		}
 	},2500)
+	return
+};
+
+function welcomeUser(user){
+	if (!(WLCMSG && SETTINGS.welcome)){return}
+	API.sendChat("@"+user.username+" "+WLCMSG)
 	return
 };
 
@@ -1976,7 +2014,7 @@ function deepObject(object,property){if (object[property] !== undefined){return 
 
 function argumentsSlice(object, start, stop){
 	/* Recursive slice of 'arguments' object to join the necessary properties into one string. 
-	Negative start/stop mean 'x from the end of an object'. First property is always returned, 
+	Negative start/stop mean 'x from the end of an object'. First ('start') property is always returned, 
 	regardless of the value of 'stop'. */
 	stop = stop<0 ? object.length + stop : stop
 	start = start<0 ? object.length + start : start
@@ -2005,9 +2043,17 @@ function nameReplacement(name){
 };
 
 function swearingCheck(chatobj, test){
-	var text = chatobj.message
+	/* Words from swearing list are replaced with a lot of regexp cases to make the matching very likely,
+	possibly introducing false positives, which are then corrected with a list of exceptions and known
+	false matchings (type II errors are imposible to correct). */
+	if (chatobj.rec) {
+		var text = chatobj.message
+	} else {
+		var orig = chatobj.message
+		var text = swearParseText(chatobj.message)
+	}
 	var swear = false
-	var test = test ? "TEST" : ""
+	if (text.indexOf("!sweartest")===0 || test){var test = "TEST"} else {var test = ""}
 	for (var i=0; i<swearing_list_compiled.length; i++){
 		var pattern = new RegExp(swearing_list_compiled[i],'i')
 		if (pattern.test(text)){swear = true; break}
@@ -2016,10 +2062,11 @@ function swearingCheck(chatobj, test){
 		// check for type I errors and fix recursively.
 		var word
 		for (var i=0; i<swearing_list_exceptions.length; i++){
-			if (text.indexOf(swearing_list_exceptions[i])>-1){
-				word = swearing_list_exceptions[i]
+			var pattern_e = new RegExp(swearing_list_exceptions[i],'g')
+			if (pattern_e.test(text)){
+				word = text.match(pattern_e)[0]
 				text = text.slice(0,text.indexOf(word))+text.slice(text.indexOf(word)+word.length)
-				return swearingCheck({message: text, un: chatobj.un}, !!test)
+				return swearingCheck({message: text, un: chatobj.un, rec: true, orig: chatobj.orig || orig}, !!test)
 			}
 		}
 	}
@@ -2028,14 +2075,16 @@ function swearingCheck(chatobj, test){
 		var date = new Date()
 		var match = text.match(pattern)
 		var time = date.getDate()+"/"+(date.getMonth()+1)+" "+date.getHours()+":"+date.getMinutes()
-		if (text.indexOf("!sweartest")<0){
-			SWEARS.push([time, chatobj.un, test, text, pattern, match.join("; ")])
+		if (text.indexOf("sweartest")<0){
+			SWEARS.push([time, chatobj.un, test, text, pattern.toString(), match[0], "ORIGINAL: "+(chatobj.orig || orig)])
 		}
-		if (test){API.sendChat("That's a swear word.")}
+// 		console.log(SWEARS[SWEARS.length-1])
+		if (test){API.sendChat("That's swearing."); return false}
 	} else if (test){
 		SWEARS.push([time, chatobj.un, test, text, "NOT A SWEAR"])
 	}
-	return !test&&swear
+// 	return !test&&swear
+	return swear
 };
 			
 function compareSongInList(songinlist, songplaying){
@@ -2334,33 +2383,12 @@ function getUID(name, online){
 	if (!exactname){
 		var pattern = new RegExp(nameReplacement(name),'i')
 		users.forEach(function(elem){
-			var username = elem.username.split("").map(function(letter){
-				if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
-					return String.fromCharCode(letter.charCodeAt(0)-65248)
-				} else if (letter.charCodeAt(0)==65279){
-					return ""
-				} else if (letter==="."){
-					return ""
-				} else {
-					return letter
-				}
-			}).join("").replace(/[\s]+/g,"")
+			var username = elem.username.split("").map(wideLetters).join("").replace(/[\s]+/g,"")
 			if (pattern.test(username)){uid = elem.id}
 		})
-		if (!uid && online){return false}
-		if (!uid){
+		if (!(uid || online)){
 			for (var key in PATRONS){
-				var username = PATRONS[key].name.split("").map(function(letter){
-					if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
-						return String.fromCharCode(letter.charCodeAt(0)-65248)
-					} else if (letter.charCodeAt(0)==65279){
-						return ""
-					} else if (letter==="."){
-						return ""
-					} else {
-						return letter
-					}
-				}).join("").replace(/[\s]+/g,"")
+				var username = PATRONS[key].name.split("").map(wideLetters).join("").replace(/[\s]+/g,"")
 				if (pattern.test(username)){uid = PATRONS[key].id}
 			}
 		}
@@ -2419,6 +2447,7 @@ function enableSetting(uid/*, 'setting' args*/){
 	global_uid = uid
 	if (arguments[1]==="all"){
 		for (var setting in SETTINGS){
+			if (setting === 'locklist'){continue}
 			if (SETTINGS[setting] instanceof Object){
 				for (var subsetting in SETTINGS[setting]){
 					SETTINGS[setting][subsetting] = true	
@@ -2485,12 +2514,12 @@ function skipMix(songid, duration, name){
 
 function kittChats(data){
 	/* Tracks messages from bot and acts if needed. */
-	var p_lastpos = /is not in the list. Sorry.$/
+	var p_lastpos = /is not in the list of disconnected users.$/
 	var p_wakeup = /wake up!$/
 	var p_hangman = /(That letter has already been guessed!)|(Sorry, no such letter in the word!)|(Sorry, that's not the word!)/
 // 	console.log(data.cid)
 	if (p_lastpos.test(data.message)){
-		setTimeout(function(){API.moderateDeleteChat(data.cid)},2000)
+		setTimeout(function(){API.moderateDeleteChat(data.cid)},3000)
 	}
 	if (p_wakeup.test(data.message)){
 		API.moderateDeleteChat(data.cid)
@@ -2499,42 +2528,6 @@ function kittChats(data){
 		setTimeout(API.moderateDeleteChat,5000,data.cid)
 	}
 	return
-};
-
-function fixLinksAndEmoji(message){
-	var text = message
-	var pattern_link = /(.*)(<a href=")(.*)(" target=)(.*)(<\/a>)(.*)/
-	var pattern_emoji = /(.*)(<span class="emoji)(.*)(<span class="emoji )(.*)("><\/span><\/span>)(.*)/
-	var pattern_emojicodes = /emoji-(?!glow)[a-z0-9\-]*(?=")/gi
-	var hasemoji = false
-
-	while (pattern_link.test(text)){
-		text = text.replace(pattern_link,'$1$3$7')	// replace <a href>...</a> (if present) with just a text link
-	}
-		// If no emojis — return the text now
-	if (pattern_emoji.test(text)){
-		hasemoji = true
-		var emojicodes = text.match(pattern_emojicodes)
-	} else {
-		return text
-	}
-	while (pattern_emoji.test(text)){
-		text = text.replace(pattern_emoji,'$1$5$7')	// replace emoji <span>s with "emoji-xxxxx"
-	}
-	function getEmoji(text){
-		// Either gets the emoji from dictionary (emoji-1f521 -> :accept:) or, 
-		// if lucky, simply slices the text (e.g. emoji-shipit -> :shipit:)
-		if (text in EMOJIDICT){
-			return ":"+EMOJIDICT[text]+":"
-		} else {
-			return ":"+text.slice(6)+":"
-		}
-	}
-	for (var i=0; i<emojicodes.length; i++){
-		// Replace all "emoji-xxxxx" with the corresponding ":emoji:"
-		text = text.replace(emojicodes[i],getEmoji(emojicodes[i]))
-	}
-	return text
 };
 
 function checkSpam(uid, name, command){
@@ -2627,6 +2620,7 @@ function setStaff(URN){
 	var uid = URN.uid || getUID(URN.name)
 	if (URN.role != undefined){
 		API.moderateSetRole(uid,URN.role)
+		PATRONS[uid].role = URN.role
 		return
 	}
 	if (mutationlists.users_to_staff[URN.uid]){
@@ -2922,25 +2916,103 @@ function Patron(id){
 	this.hangmanwords = 0
 };
 
-			// RegExp replacements.
-var name_replacement_map = {'[\\s]+':"[\\s]*", '[.]+': "[.]*", '[аa]+': "[аa]+", '[bв]+': "[bв]+", '[сc]+': "[сc]+", '[d]+': "[d]+",
+			// RegExp replacements and text parsing
+function fixLinksAndEmoji(message){
+	var text = message
+	var pattern_link = /(.*)(<a href=")(.*)(" target=)(.*)(<\/a>)(.*)/
+	var pattern_emoji = /(.*)(<span class="emoji)(.*)(<span class="emoji )(.*)("><\/span><\/span>)(.*)/
+	var pattern_emojicodes = /emoji-(?!glow)[a-z0-9\-]*(?=")/gi
+	var hasemoji = false
+
+	text = text.replace(/&#34;/g,'"').replace(/&#39;/,"'")
+
+	while (pattern_link.test(text)){
+		text = text.replace(pattern_link,'$1$3$7')	// replace <a href>...</a> (if present) with just a text link
+	}
+		// If no emojis — return the text now
+	if (pattern_emoji.test(text)){
+		hasemoji = true
+		var emojicodes = text.match(pattern_emojicodes)
+	} else {
+		return text
+	}
+	while (pattern_emoji.test(text)){
+		text = text.replace(pattern_emoji,'$1$5$7')	// replace emoji <span>s with "emoji-xxxxx"
+	}
+	function getEmoji(text){
+		// Either gets the emoji from dictionary (emoji-1f521 -> :accept:) or, 
+		// if lucky, simply slices the text (e.g. emoji-shipit -> :shipit:)
+		if (text in EMOJIDICT){
+			return ":"+EMOJIDICT[text]+":"
+		} else {
+			return ":"+text.slice(6)+":"
+		}
+	}
+	for (var i=0; i<emojicodes.length; i++){
+		// Replace all "emoji-xxxxx" with the corresponding ":emoji:"
+		text = text.replace(emojicodes[i],getEmoji(emojicodes[i]))
+	}
+	return text
+};
+
+function wideLetters(letter){
+	if (letter.charCodeAt(0)>65280 && letter.charCodeAt(0)<65375){
+		return String.fromCharCode(letter.charCodeAt(0)-65248)
+	} else if (letter.charCodeAt(0)==65279){
+		return ""
+	} else if (letter==="." || letter==="_"){
+		return ""
+	} else {
+		return letter
+	}
+};
+
+function removeSpecialCharacters(string){
+	var pattern = /[^a-z0-9абвгдеёжзийклмнопрстуфхцчшщъыьэюя\s]/gi
+	var out = string.replace(pattern,"")
+	return out
+};
+
+function swearParseText(string){
+	/* Prepares the message for swearing check. Fixes links and emojis (as usual),
+	checks whether it has someone's username at the beginning and removes it,
+	in canse it is 'bitolhuitol' or similar, then converts all the stupid 'wide'
+	letters into their proper counterparts and, at the end, removes all special characters,
+	leaving only letters and spaces in the text. */
+	var out = fixLinksAndEmoji(string.toLowerCase())
+	if (out[0]==="@"){
+		var name = out.split(" ")[0].slice(1)
+		if (getUID(name, true)){
+			name = getName(getUID(name))
+			out = out.slice(name.length+1)
+		}
+	}
+	out = out.split("").map(wideLetters).join("")
+	out = removeSpecialCharacters(out)
+	return out
+};
+
+var name_replacement_map = {'[аa]+': "[аa]+", '[bв]+': "[bв]+", '[сc]+': "[сc]+", '[d]+': "[d]+",
 	'[eе]+': "[eе]+", '[f]+': "[f]+", '[hн]+': "[hн]+", '[il]+': "[il]+", '[j]+': "[j]+", '[kк]+': "[kк]+", '[mм]+': "[mм]+",
 	'[nп]+': "[nп]+", '[oо]+': "[oо]+", '[pр]+': "[pр]+", '[q]+': "[q]+", '[rг]+': "[rг]+", '[s]+': "[s]+", '[tт]+': "[tт]+",
 	'[u]+': "[u]+", '[v]+': "[v]+", '[w]+': "[w]+", '[xх]+': "[xх]+", '[уy]+': "[уy]+", '[z]+': "[z]+", '[д]+': "[д]+", 
 	'[ё]+': "[ё]+", '[ж]+': "[ж]+", '[з]+': "[з]+", '[и]+': "[и]+", '[й]+': "[й]+", '[л]+': "[л]+", '[ф]+': "[ф]+", 
 	'[ц]+': "[ц]+", '[ч]+': "[ч]+", '[ш]+': "[ш]+", '[щ]+': "[щ]+", '[ьъ]+': "[ьъ]+", '[ы]+': "[ы]+", '[э]+': "[э]+", 
-	'[ю]+': "[ю]+", '[я]+': "[я]+", };
+	'[ю]+': "[ю]+", '[я]+': "[я]+", '[\\s]+':"[\\s]*", '[.]+': "[.]*", '[\\_]+':"[\\_]*"};
 
-var swearing_replacement_map = {'[аa]+': "[аa]+[\\s]*", '[бвb]+': "[бвb]+[\\s]*", '[гrg]+': "[гrg]+[\\s]*", '[дd]+': "[дd]+[\\s]*",
-	'[её]': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж': "([жjg]+|(zh)+|(jh)+)[\\s]*", '[з]': "[3зz]+[\\s]*", '[ий]': "([ийjyieе]+|)[\\s]*",
-	'[к]': "[кk]+[\\s]*", '[л]': "([лl]+|(jl)+|(ji)+)[\\s]*", '[м]': "([мm]+|(rn)+)[\\s]*", '[н]': "[нh]+[\\s]*", '[о]': "[оo0]+[\\s]*",
-	'[п]': "[пnpр]+[\\s]*", '[р](?!\\])': "[рrp]+[\\s]*", '[с]': "[сcs]+[\\s]*", '[т]': "[тt]+[\\s]*", '[у]': "[уuy]+[\\s]*", '[ф]': "([фf]+|(ph)+)[\\s]*",
-	'[х]': "[хxh]+[\\s]*", '[ц]': "([цc]+|(ts)+)[\\s]*", '[ч]': "([ч]+|(ch)+)[\\s]*", '[ш]': "([ш]+|(sh)+)[\\s]*", '[щ]': "([щ]+|(sh)+|(sh')+[\\s]*",
-	'[ъь]': "[bъь']+[\\s]*", '[ы]': "([ыi]+|(bi)+|(bl)+)[\\s]*", '[э]': "[e]+[\\s]*", '[ю]': "([ю]+|(yu)+|(ju)+)[\\s]*", '[я]': "([яаa]+|(ya)+|(ja)+)[\\s]*"}
+var swearing_replacement_map = {'а+': "[аa]+[\\s]*", 'б+': "[бb6]+[\\s]*", 'в+': "[vвb]+[\\s]*", '[гrg]+': "[гrg]+[\\s]*", '[дd]+': "[дd]+[\\s]*",
+	'[её]+': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж+': "([жjg]+|(zh)+|(jh)+)[\\s]*", 'з+': "[3зz]+[\\s]*", '[ий]+': "([ийjyieе]+)[\\s]*",
+	'к+': "[кk]+[\\s]*", 'л+': "([лl]+|(jl)+|(ji)+)[\\s]*", 'м+': "([мm]+|(rn)+)[\\s]*", 'н+': "[нh]+[\\s]*", 'о+': "[оo0]+[\\s]*",
+	'п+': "[пnpр]+[\\s]*", 'р+(?!\\])': "[рrp]+[\\s]*", 'с+': "[сcs]+[\\s]*", 'т+': "[тt]+[\\s]*", 'у+': "[уuy]+[\\s]*", 'ф+': "([фf]+|(ph)+)[\\s]*",
+	'х+': "[хxh]+[\\s]*", 'ц+': "([цc]+|(ts)+)[\\s]*", 'ч+': "([ч]+|(ch)+)[\\s]*", 'ш+': "([ш]+|(sh)+)[\\s]*", 'щ+': "([щ]+|(sh)+|(sh')+[\\s]*",
+	'[ъь]+': "[bъь']+[\\s]*", 'ы+': "([ыi]+|(bi)+|(bl)+)[\\s]*", 'э+': "[e]+[\\s]*", 'ю+': "([ю]+|([йи]+у)+|(yu)+|(ju)+)[\\s]*",
+	'я+': "([я]+|(ий]+а)+|(ya)+|(ja)+)[\\s]*"};
 
 var swearing_list_source = ['пидор', 'пидр', 'пидар', 'педик', 'бля', 'блядь', 'блять', 'сука',
-	'сучка', 'сцука', 'мудак', 'мудил', 'хуй', 'хуе', 'хуя', 'блеать', 'блеадь', 'пизд',
-	'пезд', 'говно', 'гавно', 'гавен', 'говен', 'гавён', 'говён', 'ебк','ебу', 'падла']
+	'сучка', 'сцука', 'мудак', 'мудил', 'хуй', 'хуе', 'хуя', 'блеать', 'блеадь', 'пизд', 'пзд',
+	'пезд', 'говно', 'гавно', 'гавен', 'говен', 'гавён', 'говён', 'ебк','ебу', 'падла', 'параш',
+	'далбо', 'долбо', 'епт', 'хуле', 'хули', 'блад', 'мразь', 'блят', 'бляд', 'сосат', 'сасат',
+	'блджа', 'уеб', 'еба', 'ебёт', 'ебёшь', 'мудл', 'мудач', 'шлюх', 'шлюш'];
 
 var swearing_list_compiled = ['cerf','ыглф',',kz'].concat.apply([],swearing_list_source.map(function(elem){
 		var word = elem
@@ -2951,10 +3023,13 @@ var swearing_list_compiled = ['cerf','ыглф',',kz'].concat.apply([],swearing_
 			}
 		}
 		return word
-}))
+}));
 
-var swearing_list_exceptions = ['требушет', 'габен', 'бляшка']
-
+var swearing_list_exceptions = ['требушет', 'габен', 'бляшка', 'из (?!да[tт\\s]|до[^jyий]|де[tт\\s]|дющ|дё[jhжн]|ди[шт])',
+	'вла', '[её] бу[^щ\\s]', 'до[мтнквд][ауио]', '[^\\s]е[\\s]*р[\\s]*т[^\\s]', 'употребл', 'потребле',
+	'[^\\s]е[\\s]*п[\\s]*т[^\\sе]', '([^\\s]ent)|(ent[^\\s])', 'govnosuka', 'http.*([\\s\\b]|$)', 'en t', '[^\\s]еп т[^\\s]',
+	'[^\\sауъь]е[\\s]*б[\\s]*а[^нт]', '[^\\s]ебу[^\\s]', 'bitohuitol', 'любл', '[^\\s]ебе т', 'ред', 'рубл',
+	'[^\\sг]e[\\s]*b[\\s]*[au][^\\stn]', 'н[её]б[ао]', 'ридо', '[^\\s]м уд[^\\s]', '[^\\s]му д[^\\s]'];
 
 			// STACKOVERFLOW SOLUTIONS
 /*
