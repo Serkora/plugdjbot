@@ -33,6 +33,7 @@ var DROPPED = Object.create(null)						// List of users disconnected while in a 
 var PATRONS = Object.create(null)						// Contains custom user-objects.
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
 var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
+var HANGMAN = Object.create(null)						// Hangman words, number of attempts, tried letters, etc
 var WLCMSG = ""											// Welcome message.
 // var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from the localStorage.
 
@@ -108,9 +109,9 @@ Object.defineProperties(SETTINGS,{
 		}
 	},
 	'control': {
-		value: true,
 		enumerable: false,
-		writable: false
+		writable: false,
+		value: true
 	}
 });
 Object.seal(SETTINGS)
@@ -806,7 +807,7 @@ chatControl = {
 			enableSetting(uid,"all")
 			return
 		}
-		SETTINGS[setting]=true
+		enableSetting(uid,setting)
 		while (SETTINGS.disabled.indexOf(setting)>-1){
 			SETTINGS.disabled.splice(SETTINGS.disabled.indexOf(setting),1)
 		}
@@ -894,15 +895,16 @@ chatControl = {
 	, remove: function(uid, command){
 		/* Remove user-created command. */
 		if (!assertPermission(uid,0)){return}
-		chatCommands.remove(command)
+		chatCommands.remove(command.toLowerCase())
 		return
 	}
 	, destroy: function(uid){
 		/* Sayonara. */
 		if (!assertPermission(uid,0)){return}
 		var u = API.getUsers()
-		API.moderateForceSkip()
+		API.moderateDJCycle(false)
 		API.moderateLockWaitList(true,true)
+		API.moderateForceSkip()
 		for (var key in PATRONS){
 			setStaff({uid: PATRONS[key].id, role: 0})
 			userBan({uid: PATRONS[key].id, duration: "forever"})
@@ -1220,7 +1222,7 @@ chatTools = {
 			}
 			if (!(/[.!?]/.test(VOTING.propchat.slice(-2,-1)))) {VOTING.propchat = VOTING.propchat.slice(0,-2)+"."}
 			API.sendChat(VOTING.propchat)
-			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
+			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #".')},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		} else {
@@ -1230,7 +1232,7 @@ chatTools = {
 			VOTING.proposal = text
 			if (!(/[.!?]/.test(VOTING.proposal.slice(-1)))) {VOTING.proposal += "."}
 			API.sendChat("Let the voting begin. Today's proposal is: "+VOTING.proposal)
-			setTimeout(function(){API.sendChat("Please vote for or against this proposal by typing !voteyea or !votenay")},500)
+			setTimeout(function(){API.sendChat('Please vote for or against this proposal by typing "!voteyea" or "!votenay".')},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		}
@@ -1245,7 +1247,7 @@ chatTools = {
 		setTimeout(function(){delete VOTING.tiedproposals},5000)
 	}
 	, votehalt: function(uid){
-		if (!assertPermission(uid,4)){return}
+		if (!assertPermission(uid,3)){return}
 		var s1 = VOTING.signtitle
 		var s2 = VOTING.signedusers
 		VOTING = Object.create(null)
@@ -2343,7 +2345,7 @@ function enlistment(data){
 		}
 		return
 	}
-	if (command === "signfinish" && assertPermission(uid,2)){
+	if (command === "signend" && assertPermission(uid,2)){
 		enlistment({message:'!signed',uid:uid})
 		delete VOTING.signtitle
 		delete VOTING.signedusers
@@ -2443,44 +2445,50 @@ function assertPermission(uid,n){
 	return MasterList.indexOf(uid)>-1 || API.getUser(uid).role>=((n*n)/n)
 };
 
-function enableSetting(uid/*, 'setting' args*/){
+function enableSetting(uid, setting/*, *settings */){
 	global_uid = uid
 	if (arguments[1]==="all"){
-		for (var setting in SETTINGS){
-			if (setting === 'locklist'){continue}
-			if (SETTINGS[setting] instanceof Object){
-				for (var subsetting in SETTINGS[setting]){
-					SETTINGS[setting][subsetting] = true	
-				}
-			} else {
-				SETTINGS[setting] = true
-			}
-		}
+		var args = [uid].concat(Object.keys(SETTINGS))
+		args.splice(args.indexOf("locklist"),1)
+		enableSetting.apply(this, args)
 		return
 	}
 	for (var i=1; i<arguments.length; i++){
-		SETTINGS[arguments[i]]=true
+		var path = arguments[i].split(".")
+		var last = path.pop()
+		if (typeof path.reduce(deepObject,SETTINGS)[last] === "boolean") {
+			path.reduce(deepObject,SETTINGS)[last] = true
+		} else if (typeof path.reduce(deepObject,SETTINGS)[last] === "object"){
+			for (var key in path.reduce(deepObject,SETTINGS)[last]){
+				if (typeof path.reduce(deepObject,SETTINGS)[last][key] === "boolean"){
+					path.reduce(deepObject,SETTINGS)[last][key] = true
+				}
+			}
+		}
 	}
 	return
 };
 
-function disableSetting(uid/*, 'setting' args*/){
+function disableSetting(uid, setting/*, *settings */){
 	global_uid = uid
 	if (arguments[1]==="all"){
-		for (var setting in SETTINGS){
-			if (SETTINGS[setting] instanceof Object){
-				for (var subsetting in SETTINGS[setting]){
-					SETTINGS[setting][subsetting] = false
-				}
-			} else {
-				SETTINGS[setting] = false
-			}
-			SETTINGS[setting] = false
-		}
+		var args = [uid].concat(Object.keys(SETTINGS))
+		args.splice(args.indexOf("locklist"),1)
+		disableSetting.apply(this, args)
 		return
 	}
 	for (var i=1; i<arguments.length; i++){
-		SETTINGS[arguments[i]]=false
+		var path = arguments[i].split(".")
+		var last = path.pop()
+		if (typeof path.reduce(deepObject,SETTINGS)[last] === "boolean") {
+			path.reduce(deepObject,SETTINGS)[last] = false
+		} else if (typeof path.reduce(deepObject,SETTINGS)[last] === "object"){
+			for (var key in path.reduce(deepObject,SETTINGS)[last]){
+				if (typeof path.reduce(deepObject,SETTINGS)[last][key] === "boolean"){
+					path.reduce(deepObject,SETTINGS)[last][key] = false
+				}
+			}
+		}
 	}
 	return
 };
@@ -2764,15 +2772,15 @@ function hangmanChat(data){
 	var msg = data.message
 	var uname = data.un
 	var uid = data.uid
-	if (msg.split(" ")[0]==="!letter" || msg.split(" ")[0]==="!lt"){
+	if ((msg.split(" ")[0]==="!letter" || msg.split(" ")[0]==="!lt") && msg.split(" ").length>1){
 		hangman(msg.split(" ")[1].toLowerCase(),"letter",uname)
 		PATRONS[uid].samecommand = 0
 	};
-	if (msg.split(" ")[0]==="!word" || msg.split(" ")[0]==="!wd"){
+	if ((msg.split(" ")[0]==="!word" || msg.split(" ")[0]==="!wd") && msg.split(" ").length>1){
 		hangman(msg.split(" ")[1].toLowerCase(),"word",uname)
 		PATRONS[uid].samecommand = 0
 	};
-	if (msg==="!hangstop" && assertPermission(data.uid,4)){
+	if (msg==="!hangstop" && assertPermission(data.uid,3)){
 		mode = "normal"
 		hangmanword = ""
 		hangmanwordg = ""
@@ -2822,6 +2830,7 @@ function hangman(chat,type,name){
 		hangcount = 0
 		hangtried = []
 		API.off(API.CHAT, hangmanChat)
+		return
 	};
 	if (hangcount>=10){
 		setTimeout(function(){API.sendChat("Ah, wrong once again! You've been hung. The word was: "+wrd)},(250))
@@ -2831,7 +2840,9 @@ function hangman(chat,type,name){
 		hangcount = 0
 		hangtried = []
 		API.off(API.CHAT, hangmanChat)
+		return
 	};
+	return
 };
 
 function russianRoulette(uid, name, argument){
@@ -2840,7 +2851,7 @@ function russianRoulette(uid, name, argument){
 		API.sendChat("@"+name+" "+PATRONS[uid].roulette+", "+(""+Math.pow(0.833,PATRONS[uid].roulette)*100).slice(0,5)+"%")
 		return
 	}
-	if (argument==="highscore"){
+	if (argument==="highest"){
 		var highest = true
 		for (var key in PATRONS){
 			if (PATRONS[key].rouletterecord>PATRONS[uid].rouletterecord){
@@ -2851,7 +2862,7 @@ function russianRoulette(uid, name, argument){
 			["",". Highest in this room!"][~~highest])
 		return
 	}
-	if (argument==="highest"){
+	if (argument==="highscore"){
 		var max = [0,'name']
 		for (var key in PATRONS){
 			if (PATRONS[key].rouletterecord>max[0]){
