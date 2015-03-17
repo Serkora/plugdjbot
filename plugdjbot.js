@@ -8,9 +8,10 @@
 
 /* 
 TO DO:
-5. Song titles filtering/fixing. (add video-id array, (and|ft[.]*|&), case-independent, artist-title switched up)
+5. Song titles filtering/fixing. (add video-id array, (and|ft[.]*|&), case-independent, artist-title switched up).
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
-10. !iwanttocycleevenwithdjcycleturnedoff
+10. !iwanttocycleevenwithdjcycleturnedoff.
+11. Toggleable logging into console (all chats (original and fixed), swearing (each check iteration))
 */
 
 
@@ -46,7 +47,7 @@ Object.defineProperties(SETTINGS,{
 	'_addtweek':{value:false,writable:true},
 	'_locklist':{value:false,writable:true},
 	'addtweek': {
-// 		enumerable: true,
+		enumerable: false,
 		set: function(val){
 			if (assertPermission(global_uid,0) || global_uid===5121031){
 				this._addtweek = val
@@ -98,7 +99,7 @@ Object.defineProperties(SETTINGS,{
 					WAITLIST = API.getWaitList().map(function(elem){return elem.id})
 					STATE = "running"
 					enableSetting(4702482,'all')
-					disableSetting.apply(this, [4702482].concat(this.disabled))
+					disableSetting.apply(this, [4702482, 'swear', 'locklist'].concat(this.disabled))
 					chatCommands.flushlimits()
 					chatCommands.fixpatrons()
 					ALLCOMMANDS.update()
@@ -112,6 +113,11 @@ Object.defineProperties(SETTINGS,{
 		enumerable: false,
 		writable: false,
 		value: true
+	},
+	'log': {
+		enumerable: false,
+		writable: true,
+		value: false
 	}
 });
 Object.seal(SETTINGS)
@@ -232,9 +238,10 @@ botStart = function(){
 	
 	// Chat responses
 	API.on(API.CHAT, function(message){
+		kittLog(message)
 		prev_chat_uid = this_chat_uid
 		this_chat_uid = message.uid
-		swearingCheck(message)
+		if (swearingMute(message)){return}
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
@@ -398,7 +405,7 @@ botHangman = function(language){
 			// INTERNAL CHAT COMMANDS.
 chatCommands = {
 	input: function(input){
-		console.log(input)
+		kittLog(input)
 		var command = input.slice(1).split(" ")[0]
 		var args = input.split(" ").slice(1)
 		if (command in chatCommands){
@@ -829,8 +836,14 @@ chatControl = {
 			localStorage.setObject("settingsdisabled",SETTINGS.disabled)
 		} else {
 			clearTimeouts(setting)
-			timeouts[setting] = setTimeout(function(){global_uid = uid; enableSetting(uid,setting)},delay*60*1000)
+			timeouts[setting] = setTimeout(function(){global_uid = uid; enableSetting(uid,setting); clearTimeouts(setting)},delay*60*1000)
 		}
+		return
+	}
+	, letusswear: function(uid){
+		if (!assertPermission(uid,3)){return}
+		clearTimeouts('swear')
+		SETTINGS.swear = false
 		return
 	}
 	, nodelete: function(uid){
@@ -1123,7 +1136,11 @@ chatTools = {
 		return
 	}
 	, mute: function(uid, name, target/*, *target, duration */){
-		if (!assertPermission(uid,2)){return}
+		/* 'duration' is positioned as the last argument, so the name consists of all the words between arguments 2 and (n-1).
+		if 'uid' is not a number ("swearing", for example), that means that this function is being called from somewhere else,
+		not chat, thus omitting some of the functionality (like sending the chat with duration), as it will be done in the
+		function this is called from. */
+		if (!(assertPermission(uid,2) || typeof uid !='number')){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
 		if (!tid){API.sendChat("Invalid target"); return}
@@ -1142,7 +1159,7 @@ chatTools = {
 			if (isNaN(dur) || dur<0.3){API.sendChat("Invalid duration"); return}
 			if (dur>45){API.sendChat("Can't mute for longer than 45 minutes yet. Coming soon!"); return}
 			duration = ~~(dur/15)
-			API.sendChat("@"+target+", you've been muted for "+dur+" minutes.")
+			if (typeof uid === 'number'){API.sendChat("@"+target+", you've been muted for "+dur+" minutes.")}
 			if (API.getUser(tid).role===0){
 				userMute({uid: tid, duration: duration})
 			} else {
@@ -1455,7 +1472,7 @@ chatFun = {
 			for (var i=longest; i>=1; i--){
 				name = possible_name.split(" ").slice(0,i+1).join(" ")
 				var tid = getUID(name, true)
-				if (tid){length = i; console.log(length); break}
+				if (tid){length = i; break}
 			}
 			if (!tid){
 				var text = "@"+argumentsSlice(arguments,3)
@@ -2012,6 +2029,12 @@ function checkStuck(){
 };
 
 			// SUPPORTING FUNCTIONS
+function kittLog(object){
+	if (SETTINGS.log){
+		console.log(object)
+	}
+}
+
 function deepObject(object,property){if (object[property] !== undefined){return object[property] = object[property]}};
 
 function argumentsSlice(object, start, stop){
@@ -2044,11 +2067,12 @@ function nameReplacement(name){
 	return ret
 };
 
-function swearingCheck(chatobj, test){
+function swearingDetect(chatobj, test){
 	/* Words from swearing list are replaced with a lot of regexp cases to make the matching very likely,
 	possibly introducing false positives, which are then corrected with a list of exceptions and known
 	false matchings (type II errors are imposible to correct). */
 	if (chatobj.rec) {
+		kittLog(chatobj)
 		var text = chatobj.message
 	} else {
 		var orig = chatobj.message
@@ -2068,7 +2092,7 @@ function swearingCheck(chatobj, test){
 			if (pattern_e.test(text)){
 				word = text.match(pattern_e)[0]
 				text = text.slice(0,text.indexOf(word))+text.slice(text.indexOf(word)+word.length)
-				return swearingCheck({message: text, un: chatobj.un, rec: true, orig: chatobj.orig || orig}, !!test)
+				return swearingDetect({message: text, un: chatobj.un, rec: true, orig: chatobj.orig || orig}, !!test)
 			}
 		}
 	}
@@ -2080,13 +2104,48 @@ function swearingCheck(chatobj, test){
 		if (text.indexOf("sweartest")<0){
 			SWEARS.push([time, chatobj.un, test, text, pattern.toString(), match[0], "ORIGINAL: "+(chatobj.orig || orig)])
 		}
-// 		console.log(SWEARS[SWEARS.length-1])
+		kittLog(SWEARS[SWEARS.length-1])
 		if (test){API.sendChat("That's swearing."); return false}
 	} else if (test){
 		SWEARS.push([time, chatobj.un, test, text, "NOT A SWEAR"])
 	}
 // 	return !test&&swear
 	return swear
+};
+
+function swearingMute(chatobj){
+	var swear = swearingDetect(chatobj)
+	if (SETTINGS.disabled.indexOf("swear")>-1){return false}
+	if (!SETTINGS.swear){
+		if (!timeouts.swear){
+			var now = new Date()
+			var thudate = now.getDate() -  now.getDay() + 4
+			var thu = new Date(now.getFullYear(), now.getMonth(), thudate, 18)
+			if (now>thu){thu.setDate(thu.getDate()+7)}
+			kittLog(console.log((thu.getTime() - now.getTime())/1000/60))
+			timeouts.swear = setTimeout(function(){
+				clearTimeouts('swear')
+				clearTimeouts('welcome')
+				SETTINGS.swear = true
+				var wlc = SETTINGS.welcome
+				var wlcm = WLCMSG
+				SETTINGS.welcome = true
+				WLCMSG = "Добро пожаловать на вечер чистого языка! Не ругаемся матом и прочими некрасивыми словами."
+				timeouts.swear = setTimeout(function(){
+					SETTINGS.swear = false
+					SETTINGS.welcome = wlc
+					chatTools.joinmessage(4702482, 'frederik.torve', wlcm)
+					clearTimeouts('swear')
+				},4*60*60*1000)
+			}, thu.getTime() - now.getTime())
+		}
+		return false
+	}
+	if (swear){
+		chatTools.mute('swearing', 'frederik.torve', chatobj.un, 0.3)
+		API.sendChat("@"+chatobj.un+", You've been muted for 1 minute for swearing. Please don't.")
+	}
+	return
 };
 			
 function compareSongInList(songinlist, songplaying){
@@ -2110,7 +2169,8 @@ function clearTimeouts(type){
 			clearTimeout(timeouts[key])
 			clearInterval(timeouts[key])
 		}
-		timeout = Object.create(null)
+		timeouts = Object.create(null)
+		return
 	}
 	return
 };
@@ -2391,7 +2451,7 @@ function getUID(name, online){
 		if (!(uid || online)){
 			for (var key in PATRONS){
 				var username = PATRONS[key].name.split("").map(wideLetters).join("").replace(/[\s]+/g,"")
-				if (pattern.test(username)){uid = PATRONS[key].id}
+				if (pattern.test(username)){uid = PATRONS[key].id; break}
 			}
 		}
 		return uid
@@ -2522,10 +2582,10 @@ function skipMix(songid, duration, name){
 
 function kittChats(data){
 	/* Tracks messages from bot and acts if needed. */
+	kittLog(data.cid)
 	var p_lastpos = /is not in the list of disconnected users.$/
 	var p_wakeup = /wake up!$/
 	var p_hangman = /(That letter has already been guessed!)|(Sorry, no such letter in the word!)|(Sorry, that's not the word!)/
-// 	console.log(data.cid)
 	if (p_lastpos.test(data.message)){
 		setTimeout(function(){API.moderateDeleteChat(data.cid)},3000)
 	}
@@ -2699,6 +2759,9 @@ function patronJoin(user){
 		patron.session = Date.now()
 		patron.online = true
 		PATRONS[user.id] = patron
+	}
+	if (patron.name === "твик"){
+		chatFun.meow(patron.id, patron.name, patron.name)
 	}
 	return
 };
@@ -3012,7 +3075,7 @@ var name_replacement_map = {'[аa]+': "[аa]+", '[bв]+': "[bв]+", '[сc]+': "[
 	'[ю]+': "[ю]+", '[я]+': "[я]+", '[\\s]+':"[\\s]*", '[.]+': "[.]*", '[\\_]+':"[\\_]*"};
 
 var swearing_replacement_map = {'а+': "[аa]+[\\s]*", 'б+': "[бb6]+[\\s]*", 'в+': "[vвb]+[\\s]*", '[гrg]+': "[гrg]+[\\s]*", '[дd]+': "[дd]+[\\s]*",
-	'[её]+': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж+': "([жjg]+|(zh)+|(jh)+)[\\s]*", 'з+': "[3зz]+[\\s]*", '[ий]+': "([ийjyieе]+)[\\s]*",
+	'[её]+': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж+': "([жjg]+|(zh)+|(jh)+)[\\s]*", 'з+': "[3зz]+[\\s]*", '[ий]+': "([ийjyieеn]+)[\\s]*",
 	'к+': "[кk]+[\\s]*", 'л+': "([лl]+|(jl)+|(ji)+)[\\s]*", 'м+': "([мm]+|(rn)+)[\\s]*", 'н+': "[нh]+[\\s]*", 'о+': "[оo0]+[\\s]*",
 	'п+': "[пnpр]+[\\s]*", 'р+(?!\\])': "[рrp]+[\\s]*", 'с+': "[сcs]+[\\s]*", 'т+': "[тt]+[\\s]*", 'у+': "[уuy]+[\\s]*", 'ф+': "([фf]+|(ph)+)[\\s]*",
 	'х+': "[хxh]+[\\s]*", 'ц+': "([цc]+|(ts)+)[\\s]*", 'ч+': "([ч]+|(ch)+)[\\s]*", 'ш+': "([ш]+|(sh)+)[\\s]*", 'щ+': "([щ]+|(sh)+|(sh')+[\\s]*",
@@ -3023,7 +3086,7 @@ var swearing_list_source = ['пидор', 'пидр', 'пидар', 'педик'
 	'сучка', 'сцука', 'мудак', 'мудил', 'хуй', 'хуе', 'хуя', 'блеать', 'блеадь', 'пизд', 'пзд',
 	'пезд', 'говно', 'гавно', 'гавен', 'говен', 'гавён', 'говён', 'ебк','ебу', 'падла', 'параш',
 	'далбо', 'долбо', 'епт', 'хуле', 'хули', 'блад', 'мразь', 'блят', 'бляд', 'сосат', 'сасат',
-	'блджа', 'уеб', 'еба', 'ебёт', 'ебёшь', 'мудл', 'мудач', 'шлюх', 'шлюш'];
+	'блджа', 'уеб', 'еба', 'ебёт', 'ебёшь', 'мудл', 'мудач', 'шлюх', 'шлюш', '[\\s]+ипат', '[\\s]ипал', 'куес', 'куил'];
 
 var swearing_list_compiled = ['cerf','ыглф',',kz'].concat.apply([],swearing_list_source.map(function(elem){
 		var word = elem
