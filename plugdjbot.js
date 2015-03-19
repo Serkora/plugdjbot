@@ -106,6 +106,7 @@ Object.defineProperties(SETTINGS,{
 					chatTools.alternatives()
 					chatFun.alternatives()
 					getBansAndMutes()
+					setTimeout(function(){SETTINGS.log = false},5000)
 					return
 		}
 	},
@@ -117,7 +118,7 @@ Object.defineProperties(SETTINGS,{
 	'log': {
 		enumerable: false,
 		writable: true,
-		value: false
+		value: true
 	}
 });
 Object.seal(SETTINGS)
@@ -241,7 +242,7 @@ botStart = function(){
 		kittLog(message)
 		prev_chat_uid = this_chat_uid
 		this_chat_uid = message.uid
-		if (swearingMute(message)){return}
+// 		if (swearingMute(message)){return}
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
@@ -625,8 +626,12 @@ chatCommands = {
 		return
 		
 	}
-	, savetolocalstorage: function(force){
+	, savetolocalstorage: function(force, variable){
 		/* 'force' might not be boolean if manually called from chat. */
+		if (variable){
+			localStorage.setObject(variable,GLOBAL[variable])
+			return
+		}
 		localStorage.setObject('localstoragekeys',localstoragekeys)
 		for (i=0; i<localstoragekeys.length; i++){
 			if (!force && immutablestoragekeys.indexOf(localstoragekeys[i]) > -1) {continue}
@@ -942,7 +947,7 @@ chatTools = {
 		this.lp = this.lastplayed
 		this.bugreport = this.message
 	}
-	, lastpos: function(uid, name, target/*, target */){
+	, lastpos_old: function(uid, name, target/*, target */){
 		/* 
 		Move the users to the position they was at before dropping from plug.dj.
 		Extracts the userID for the required person, checks if they are already in the wait list,
@@ -962,6 +967,45 @@ chatTools = {
 		if (!(tid in DROPPED)){API.sendChat(target+" is not in the list of disconnected users."); return}
 		var place = DROPPED[tid][1]
 		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)) {
+			chatTools.move("lastpos",tid,place)
+			setTimeout(function(){
+					if (mutationlists.users_to_add[tid]){
+						API.sendChat("Unable to add @"+target+" to wait list. Refresh the page and try again. Your last position was "+place)
+					}
+					if (mutationlists.users_to_move[tid] && !mutationlists.users_to_add[tid]){
+						API.sendChat("Unable to move @"+target+". Refresh the page and try again. Your last position was "+place)
+					}
+					delete mutationlists.users_to_move[tid]
+					delete mutationlists.users_to_add[tid]
+				},3000)
+		}
+		return
+	}
+	, lastpos: function(uid, name, target/*, target */){
+		/* 
+		Move the users to the position they was at before dropping from plug.dj.
+		Extracts the userID for the required person, checks if they have disconnected recently,
+		adds them to the arrays Mutation Observer refers to and calls either addDJ or moveDJ functions.
+		Then in 3 seconds checks if everything was done successfully, sending chat message if not.
+		*/
+		if (target){
+			var target = argumentsSlice(arguments,2)
+			if (target==="_chat"){
+				API.sendChat(name+"'s place was "+PATRONS[uid].dropped[1]+" on "+String(new Date(PATRONS[uid].dropped[0])))
+				return
+			}
+			var tid = getUID(target)
+			var target = getName(tid) || target
+			if (!tid){API.sendChat("Invalid name '"+target+"'."); return}
+		} else {var tid = uid; var target = name}
+		
+		var place = PATRONS[tid].dropped[1]
+		var time = PATRONS[tid].dropped[0]
+		if ((Date.now() - time) > 1*60*60*1000){
+			API.sendChat("@"+target+", You've been disconnected for too long. But your last place was "+place+" on "+String(new Date(time))+".")
+			return
+		}
+		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)){
 			chatTools.move("lastpos",tid,place)
 			setTimeout(function(){
 					if (mutationlists.users_to_add[tid]){
@@ -1550,7 +1594,7 @@ chatVarious = {
 	}
 	, sweartest: function(uid, name, text/*, *text */){
 		var text = argumentsSlice(arguments, 2)
-		swearingCheck({message: text, un: name}, true)
+		swearingDetect({message: text, un: name}, true)
 		return
 	}
 };
@@ -1681,6 +1725,8 @@ function waitlistUpdate(){
 		for (var i=0; i<WAITLIST.length; i++){
 			if (newlist.indexOf(WAITLIST[i])<0 && WAITLIST[i] != API.getDJ().id){
 				DROPPED[WAITLIST[i]] = [Date.now(),i+1]
+				PATRONS[WAITLIST[i]].dropped = [Date.now(), i+1]
+				chatCommands.savetolocalstorage("","PATRONS")
 			}
 		}
 	}
@@ -2031,7 +2077,9 @@ function checkStuck(){
 			// SUPPORTING FUNCTIONS
 function kittLog(object){
 	if (SETTINGS.log){
-		console.log(object)
+		var dt = new Date()
+		var time = dt.getDate()+"/"+(dt.getMonth()+1)+" "+dt.getHours()+":"+dt.getMinutes()+" "
+		console.log(time, object)
 	}
 }
 
@@ -2131,6 +2179,7 @@ function swearingMute(chatobj){
 				var wlcm = WLCMSG
 				SETTINGS.welcome = true
 				WLCMSG = "Добро пожаловать на вечер чистого языка! Не ругаемся матом и прочими некрасивыми словами."
+				API.sendChat("Культурный вечер начался! Пожалуйста, следите за выражениями!")
 				timeouts.swear = setTimeout(function(){
 					SETTINGS.swear = false
 					SETTINGS.welcome = wlc
@@ -2142,7 +2191,8 @@ function swearingMute(chatobj){
 		return false
 	}
 	if (swear){
-		chatTools.mute('swearing', 'frederik.torve', chatobj.un, 0.3)
+		chatTools.mute('swearing', 'frederik.torve', chatobj.un, 1)
+		PATRONS[chatobj.uid].chchmutes++
 		API.sendChat("@"+chatobj.un+", You've been muted for 1 minute for swearing. Please don't.")
 	}
 	return
@@ -2759,9 +2809,9 @@ function patronJoin(user){
 		patron.session = Date.now()
 		patron.online = true
 		PATRONS[user.id] = patron
-	}
-	if (patron.name === "твик"){
-		chatFun.meow(patron.id, patron.name, patron.name)
+		if (patron.name === "твик"){
+			chatFun.meow(patron.id, patron.name, patron.name)
+		}
 	}
 	return
 };
@@ -2966,6 +3016,7 @@ function Patron(id){
 	this.online = true
 	this.alarm = false
 	this.leave = [false, false]
+	this.dropped = [0,0]
 		// stats
 	this.commands = 0
 	this.messages = 0
@@ -2988,6 +3039,7 @@ function Patron(id){
 	this.roulette = 0
 	this.rouletterecord = 0
 	this.hangmanwords = 0
+	this.chchmutes = 0
 };
 
 			// RegExp replacements and text parsing
@@ -3075,7 +3127,7 @@ var name_replacement_map = {'[аa]+': "[аa]+", '[bв]+': "[bв]+", '[сc]+': "[
 	'[ю]+': "[ю]+", '[я]+': "[я]+", '[\\s]+':"[\\s]*", '[.]+': "[.]*", '[\\_]+':"[\\_]*"};
 
 var swearing_replacement_map = {'а+': "[аa]+[\\s]*", 'б+': "[бb6]+[\\s]*", 'в+': "[vвb]+[\\s]*", '[гrg]+': "[гrg]+[\\s]*", '[дd]+': "[дd]+[\\s]*",
-	'[её]+': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж+': "([жjg]+|(zh)+|(jh)+)[\\s]*", 'з+': "[3зz]+[\\s]*", '[ий]+': "([ийjyieеn]+)[\\s]*",
+	'[её]+': "([еёe]+|(ye)+|(yo)+|(jo)+|(je)+)[\\s]*", 'ж+': "([жjg]+|(zh)+|(jh)+)[\\s]*", 'з+': "[3зz]+[\\s]*", '[ий]+': "([ийujyieеn]+)[\\s]*",
 	'к+': "[кk]+[\\s]*", 'л+': "([лl]+|(jl)+|(ji)+)[\\s]*", 'м+': "([мm]+|(rn)+)[\\s]*", 'н+': "[нh]+[\\s]*", 'о+': "[оo0]+[\\s]*",
 	'п+': "[пnpр]+[\\s]*", 'р+(?!\\])': "[рrp]+[\\s]*", 'с+': "[сcs]+[\\s]*", 'т+': "[тt]+[\\s]*", 'у+': "[уuy]+[\\s]*", 'ф+': "([фf]+|(ph)+)[\\s]*",
 	'х+': "[хxh]+[\\s]*", 'ц+': "([цc]+|(ts)+)[\\s]*", 'ч+': "([ч]+|(ch)+)[\\s]*", 'ш+': "([ш]+|(sh)+)[\\s]*", 'щ+': "([щ]+|(sh)+|(sh')+[\\s]*",
@@ -3086,7 +3138,8 @@ var swearing_list_source = ['пидор', 'пидр', 'пидар', 'педик'
 	'сучка', 'сцука', 'мудак', 'мудил', 'хуй', 'хуе', 'хуя', 'блеать', 'блеадь', 'пизд', 'пзд',
 	'пезд', 'говно', 'гавно', 'гавен', 'говен', 'гавён', 'говён', 'ебк','ебу', 'падла', 'параш',
 	'далбо', 'долбо', 'епт', 'хуле', 'хули', 'блад', 'мразь', 'блят', 'бляд', 'сосат', 'сасат',
-	'блджа', 'уеб', 'еба', 'ебёт', 'ебёшь', 'мудл', 'мудач', 'шлюх', 'шлюш', '[\\s]+ипат', '[\\s]ипал', 'куес', 'куил'];
+	'блджа', 'уеб', 'еба', 'ебёт', 'ебёшь', 'мудл', 'мудач', 'шлюх', 'шлюш', '[\\s]+ипат', '[\\s]ипал', 'куес', 'куил',
+	'хуе', '[\\s]бле[\\s]', 'ублюдок', 'манда'];
 
 var swearing_list_compiled = ['cerf','ыглф',',kz'].concat.apply([],swearing_list_source.map(function(elem){
 		var word = elem
