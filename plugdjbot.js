@@ -30,7 +30,6 @@ var mutationlists = Object.create(null)					// Object to hold all the arrays and
 var global_uid = null									// global uid value to use in SETTINGS setters.
 var DJCYCLE												// DJ Cycle state.
 var WAITLIST = []										// Current array of the queue.
-var DROPPED = Object.create(null)						// List of users disconnected while in a queue.
 var PATRONS = Object.create(null)						// Contains custom user-objects.
 var SCORE = Object.create(null)							// Saves the song score to update patron data.
 var VOTING = Object.create(null)						// Hold voting proposals and enlistments.
@@ -176,12 +175,6 @@ var localstoragekeys = ['songlist','songstats','asianlinks','roulette','catlinks
 						
 // List of variables that are not changed often or at all and thus don't need to be saved periodically (unlike songlist and songstats, for example)
 var immutablestoragekeys = ['dictru','dicteng','asianlinks','catlinks','tweek','atresponses','roulette','chatUser',"EMOJIDICT"];
-
-// Games
-var hangmanword = "";
-var hangmanwordg = "";
-var hangcount = 0;
-var hangtried = [];
 
 function start(){
 	/*
@@ -371,34 +364,29 @@ botRestart = function(){
 botHangman = function(language){
 	if (["ru","eng"].indexOf(language)<0){return}
 // 	if (mode === "hangman"){API.sendChat("You are already playing the game!")}
-	console.log("Starting Hangman!")
+	kittLog("Starting Hangman!")
 	API.off(API.CHAT, hangmanChat)
 	mode = "hangman"
-	var lng = ""
 	if (language==="ru"){
 		ind=Math.floor(Math.random()*dictru.length)
-		hangmanword = dictru[ind]
-		hangmanwordg = "_"+Array(hangmanword.length).join(" _")
-		if (hangmanword.indexOf("-")>-1){
-			ind = hangmanword.indexOf("-")
-			hangmanwordg = hangmanwordg.substr(0,ind*2)+"-"+hangmanwordg.substr(ind*2+1)
-		}
-		lng="Russian"
-		
+		HANGMAN.word = dictru[ind]
+		HANGMAN.language="Russian"		
 	}
 	if (language==="eng"){
 		ind=Math.floor(Math.random()*dicteng.length)
-		hangmanword = dicteng[ind]
-		hangmanwordg = "_"+Array(hangmanword.length).join(" _")		
-		if (hangmanword.indexOf("-")>-1){
-			ind = hangmanword.indexOf("-")
-			hangmanwordg = hangmanwordg.substr(0,ind*2)+"-"+hangmanwordg.substr(ind*2+1)
-		}
-		lng="English"
-	}	
-	API.sendChat("Let's play Hangman in "+lng+"!")
-	setTimeout(function(){API.sendChat(hangmanwordg)},(250))
-	console.log(hangmanword)
+		HANGMAN.word = dicteng[ind]
+		HANGMAN.language="English"
+	}
+	HANGMAN.uword = "_"+Array(HANGMAN.word.length).join(" _")
+	if (HANGMAN.word.indexOf("-")>-1){
+		ind = HANGMAN.word.indexOf("-")
+		HANGMAN.uword = HANGMAN.uword.substr(0,ind*2)+"-"+HANGMAN.uword.substr(ind*2+1)
+	}
+	HANGMAN.count = 0
+	HANGMAN.tried = []
+	API.sendChat("Let's play Hangman in "+HANGMAN.language+"!")
+	setTimeout(function(){API.sendChat(HANGMAN.uword)},(250))
+	kittLog(HANGMAN.word)
 	setTimeout(function(){API.sendChat('Guess a letter or the word by typing "!letter _"/"!lt _" or "!word ___". You have 10 guesses.')},(500))
 	API.on(API.CHAT, hangmanChat)
 };
@@ -947,40 +935,6 @@ chatTools = {
 		this.lp = this.lastplayed
 		this.bugreport = this.message
 	}
-	, lastpos_old: function(uid, name, target/*, target */){
-		/* 
-		Move the users to the position they was at before dropping from plug.dj.
-		Extracts the userID for the required person, checks if they are already in the wait list,
-		adds them to the arrays Mutation Observer refers to and calls either addDJ or moveDJ functions.
-		Then in 3 seconds checks if everything was done successfully, sending chat message if not.
-		*/
-		if (target){
-			var target = argumentsSlice(arguments,2)
-			if (target==="_chat"){
-				if (!DROPPED[uid]){API.sendChat(name+" is not in the list of disconnected users."); return}
-				API.sendChat(name+"'s place was "+DROPPED[uid][1]+" on "+String(new Date(DROPPED[uid][0]))); return
-			}
-			var tid = getUID(target)
-			var target = getName(tid) || target
-			if (!tid){API.sendChat("Invalid name '"+target+"'"); return}
-		} else {var tid = uid; var target = name}
-		if (!(tid in DROPPED)){API.sendChat(target+" is not in the list of disconnected users."); return}
-		var place = DROPPED[tid][1]
-		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)) {
-			chatTools.move("lastpos",tid,place)
-			setTimeout(function(){
-					if (mutationlists.users_to_add[tid]){
-						API.sendChat("Unable to add @"+target+" to wait list. Refresh the page and try again. Your last position was "+place)
-					}
-					if (mutationlists.users_to_move[tid] && !mutationlists.users_to_add[tid]){
-						API.sendChat("Unable to move @"+target+". Refresh the page and try again. Your last position was "+place)
-					}
-					delete mutationlists.users_to_move[tid]
-					delete mutationlists.users_to_add[tid]
-				},3000)
-		}
-		return
-	}
 	, lastpos: function(uid, name, target/*, target */){
 		/* 
 		Move the users to the position they was at before dropping from plug.dj.
@@ -1005,6 +959,7 @@ chatTools = {
 			API.sendChat("@"+target+", You've been disconnected for too long. But your last place was "+place+" on "+String(new Date(time))+".")
 			return
 		}
+		if (time == 0){API.sendChat("@"+target+", You are not in the list, sorry."); return}
 		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)){
 			chatTools.move("lastpos",tid,place)
 			setTimeout(function(){
@@ -1724,7 +1679,6 @@ function waitlistUpdate(){
 	if (WAITLIST.length>newlist.length){
 		for (var i=0; i<WAITLIST.length; i++){
 			if (newlist.indexOf(WAITLIST[i])<0 && WAITLIST[i] != API.getDJ().id){
-				DROPPED[WAITLIST[i]] = [Date.now(),i+1]
 				PATRONS[WAITLIST[i]].dropped = [Date.now(), i+1]
 				chatCommands.savetolocalstorage("","PATRONS")
 			}
@@ -1787,7 +1741,7 @@ function checkDJ(object){
 	/* Removes current dj from left users list and resets rolls count. */
 	if (!(object.dj)){return}
 	PATRONS[object.dj.id].rolls = 0
-	delete DROPPED[object.dj.id]
+	PATRONS[object.dj.id].dropped = [0,0]
 	return
 };
 
@@ -2091,7 +2045,7 @@ function argumentsSlice(object, start, stop){
 	regardless of the value of 'stop'. */
 	stop = stop<0 ? object.length + stop : stop
 	start = start<0 ? object.length + start : start
-	if (start<(stop-1 || object.length-1)){
+	if ((start<(stop-1)) || (!stop && start<object.length-1)){
 		return object[start]+" "+argumentsSlice(object,start+1,stop)
 	} else {
 		return object[start]
@@ -2895,17 +2849,17 @@ function hangmanChat(data){
 	};
 	if (msg==="!hangstop" && assertPermission(data.uid,3)){
 		mode = "normal"
-		hangmanword = ""
-		hangmanwordg = ""
-		hangcount = 0
+		HANGMAN.word = ""
+		HANGMAN.uword = ""
+		HANGMAN.count = 0
 		API.off(API.CHAT, hangchat)
 	};
 };
 
 function hangman(chat,type,name){
 	/* Checks the word or letter, case-independent. Gives 10 tries to guess the word. */
-	var wrd = hangmanword
-	var wrdg = hangmanwordg
+	var wrd = HANGMAN.word
+	var wrdg = HANGMAN.uword
 	var indc = []
 	if (type==="word"){
 		if (chat.toLowerCase()===wrd.toLowerCase()){
@@ -2915,7 +2869,9 @@ function hangman(chat,type,name){
 		}
 	};
 	if (type==="letter"){
-		if (hangtried.indexOf(chat.toLowerCase())>-1){
+		if (HANGMAN.language=="Russian" && !/^[а-яёй]$/.test(chat)){return}
+		if (HANGMAN.language=="English" && !/^[a-z]$/.test(chat)){return}
+		if (HANGMAN.tried.indexOf(chat.toLowerCase())>-1){
 			API.sendChat("That letter has already been guessed!")
 		} else{
 			indc = letind(wrd.toLowerCase(), chat.toLowerCase())
@@ -2927,31 +2883,26 @@ function hangman(chat,type,name){
 				if (wrdg.indexOf("_")>=0){setTimeout(function(){API.sendChat(wrdg)},250)}
 			} else{
 				API.sendChat("Sorry, no such letter in the word!")
-				hangcount++
+				HANGMAN.count++
 			}
 		}
-		hangtried.push(chat.toLowerCase())
+		HANGMAN.tried.push(chat.toLowerCase())
 	};
-	hangmanwordg = wrdg	
+	HANGMAN.uword = wrdg	
 	if (wrdg===wrd || wrdg.indexOf("_")===-1){
 		setTimeout(function(){API.sendChat("Congratulations @"+name+", you have won! The word was: "+wrd)},(250))
 		var uid = getUID(name)
-		PATRONS[uid].hangmanwords++
+		PATRONS[uid].hangmanwords.push(HANGMAN.word)
+		PATRONS[uid].hangmanwins++
 		mode = "normal"
-		hangmanword = ""
-		hangmanwordg = ""
-		hangcount = 0
-		hangtried = []
+		HANGMAN = Object.create(null)
 		API.off(API.CHAT, hangmanChat)
 		return
 	};
-	if (hangcount>=10){
+	if (HANGMAN.count>=10){
 		setTimeout(function(){API.sendChat("Ah, wrong once again! You've been hung. The word was: "+wrd)},(250))
 		mode = "normal"
-		hangmanword = ""
-		hangmanwordg = ""
-		hangcount = 0
-		hangtried = []
+		HANGMAN = Object.create(null)
 		API.off(API.CHAT, hangmanChat)
 		return
 	};
@@ -3038,7 +2989,8 @@ function Patron(id){
 		// games
 	this.roulette = 0
 	this.rouletterecord = 0
-	this.hangmanwords = 0
+	this.hangmanwins = 0
+	this.hangmanwords = []
 	this.chchmutes = 0
 };
 
@@ -3094,7 +3046,7 @@ function wideLetters(letter){
 };
 
 function removeSpecialCharacters(string){
-	var pattern = /[^a-z0-9абвгдеёжзийклмнопрстуфхцчшщъыьэюя\s]/gi
+	var pattern = /[^a-z0-9а-яёй\s]/gi
 	var out = string.replace(pattern,"")
 	return out
 };
