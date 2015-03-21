@@ -11,7 +11,7 @@ TO DO:
 5. Song titles filtering/fixing. (add video-id array, (and|ft[.]*|&), case-independent, artist-title switched up).
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
 10. !iwanttocycleevenwithdjcycleturnedoff.
-11. Toggleable logging into console (all chats (original and fixed), swearing (each check iteration))
+12. Redo the way commands are called again. make them all have one single argument with relevant properties.
 */
 
 
@@ -315,9 +315,6 @@ botStart = function(){
 
 	/* Saves data to local storage every 10 minutes. */
 	timeouts.localsave = setInterval(chatCommands.savetolocalstorage,10*60*1000)
-
-	/* Schedules 'left users' cleanup to be called every 30 minutes. */
-	timeouts.dropped = setInterval(clearDroppedUsers,(30*60*1000))
 
 	/*
 	There are two global chat counters and timers. Each is reset every 30 minutes to only
@@ -1939,17 +1936,6 @@ function welcomeUser(user){
 };
 
 			// SCHEDULED FUNCTIONS
-
-function clearDroppedUsers(){
-	/* If the user was present in this array for more than 30 minutes — remove them. */
-	var date = new Date()
-	for (var key in DROPPED) {
-		if ((date - DROPPED[key][0])/60000>=30) {
-			delete DROPPED[key]
-		}
-	}
-	return
-};
 
 function clearIssued(command,uid){
 	/* Clears issuedcommands array. */
