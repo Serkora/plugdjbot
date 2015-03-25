@@ -12,18 +12,19 @@ TO DO:
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
 10. !iwanttocycleevenwithdjcycleturnedoff.
 12. Redo the way commands are called again. make them all have one single argument with relevant properties.
+13. 
 */
 
 
-GLOBAL = this
-COMMAND_SYMBOL = "!"
-DELETE_COMMANDS = true
-BOT_USERID = 5433970
-BOT_ROOM = "dvach"
+const GLOBAL = this
+const COMMAND_SYMBOL = "!"
+var DELETE_COMMANDS = true
+const BOT_USERID = 5433970
+const BOT_ROOM = "dvach"
 
 	// Global variables declaration.
 var STATE
-var MasterList = [4702482, 3737285, 4856012, 5659102]	// List of user ids that can fully control the bot.
+const MasterList = [4702482, 3737285, 4856012, 5659102]	// List of user ids that can fully control the bot.
 var IgnoreList = []										// List is users to ignore some commands from. Should probably be in the localStorage.
 var timeouts = Object.create(null)						// Object to hold IDs of all the scheduled functions that may need to be aborted.
 var mutationlists = Object.create(null)					// Object to hold all the arrays and objects the MutationObserver should refer to.
@@ -106,6 +107,9 @@ Object.defineProperties(SETTINGS,{
 					chatFun.alternatives()
 					getBansAndMutes()
 					setTimeout(function(){SETTINGS.log = false},5000)
+					Object.defineProperty(PATRONS,'length', {
+						get: function(){var l=0; for (var key in this){l++}; return l}
+					})
 					return
 		}
 	},
@@ -147,6 +151,15 @@ var ALLCOMMANDS = {
 		if (command in chatUser)	{return "User"}
 		return false
 	}
+}
+
+const LASTFM = {
+	apikey: JSON.parse(localStorage.lastfmapikey)
+	, apiroot: "http://ws.audioscrobbler.com/2.0/"
+	, getinfo: function(artist){return this.apiroot+"?method=artist.getInfo&artist="+artist+this.middleun+this.apikey+this.format}
+	, middle: "&user=dvachbot&api_key="
+	, middleun: "&user=dvachbot&username=dvachbot&api_key="
+	, format: "&format=json"
 }
 
 var prev_chat_uid = 0;										// Some global counters/trackers.
@@ -282,6 +295,7 @@ botStart = function(){
 	API.on(API.ADVANCE, tagPlayed);
 	API.on(API.ADVANCE, patronPlayed);
 	API.on(API.ADVANCE, patronScore);
+	API.on(API.ADVANCE, addNoCycle);
 	
 		/* Updates some info of a user. Sends him a welcome message, if set. */
 	API.on(API.USER_JOIN, patronJoin);
@@ -464,6 +478,11 @@ chatCommands = {
 		localStorage.setObject("settingsdisabled",SETTINGS.disabled)
 		return
 	}
+	, eval: function(){
+		var code = argumentsSlice(arguments,0)
+		eval(code)
+		return
+	}
 		// Export/import/print
 	, export: function(path, start, stop){
 		/* Export the contents of an object to the new window. If an array, can be sliced to export only part of it. */
@@ -521,11 +540,16 @@ chatCommands = {
 			var data = path.split(".").reduce(deepObject,GLOBAL)
 		} else {return}
 		window['exported'] = data
-		if (data instanceof Object){return}
-		if (data[0] instanceof Array){
-			data = data.map(function(elem){return elem.join(" ")})
+		if (data instanceof Array){
+			if (data[0] instanceof Array){
+				data = data.map(function(elem){return elem.join(" ")})
+			}
+			data = data.slice((+start || 0),(+stop || undefined))
+			data = data.join("; ")
+		} else if (data instanceof Object){
+			data = JSON.stringify(data)
 		}
-		console.log(data.slice((+start || 0),(+stop || undefined)))
+		API.chatLog(path+": "+String(data))
 		return
 	}
 	, printall: function(){
@@ -639,12 +663,6 @@ chatCommands = {
 		return
 	}
 		// Various
-	, lastposlist: function(){
-		for (key in dropped_users_list){
-			console.log(key+" "+dropped_users_list[key])
-		}
-		return
-	}
 	, whomehed: function(){
 		var u = API.getUsers()
 		var m = []
@@ -687,6 +705,7 @@ chatCommands = {
 		}
 		return
 	}
+		// temp
 };
 
 			// USER CHAT
@@ -931,6 +950,7 @@ chatTools = {
 		this.dc = this.lastpos
 		this.lp = this.lastplayed
 		this.bugreport = this.message
+		this.iwanttocycleevenwithdjcycleturnedoff = this.cycleadd
 	}
 	, lastpos: function(uid, name, target/*, target */){
 		/* 
@@ -1058,6 +1078,12 @@ chatTools = {
 		/* Set the alarm to set off when you become the first in the queue. */
 		PATRONS[uid].alarm = true
 	}
+	, cycleadd: function(uid, name){
+		if (findInQueue(uid)[0] && findInQueue(uid)[1]<6){
+			PATRONS[uid].cycleadd = true
+		}
+		return
+	}
 	, message: function(uid, name, text/*, *text */){
 		/* Leave a message after the tone. */
 		if (!text){return}
@@ -1127,7 +1153,7 @@ chatTools = {
 			API.moderateMoveDJ(tid,place)
 		} else {
 			if (!direct){mutationlists.users_to_add[tid] = true; mutationlists.users_to_move[tid] = place}
-			API.moderateAddDJ(tid)
+			API.moderateAddDJ(String(tid))
 		}
 		return
 	}
@@ -1307,6 +1333,22 @@ chatTools = {
 		clearTimeouts('welcome')
 		timeouts.welcome = setTimeout(function(){WLCMSG = ""; return},timeout)
 		return
+	}
+	, tags: function(uid, name, artist){
+		var artist = !!artist ? argumentsSlice(arguments,2) : API.getMedia().author
+		$.getJSON(LASTFM.getinfo(artist), function(data){
+			if (data.error){API.sendChat(data.message); return}
+			if (typeof data.artist.tags !== "object"){API.sendChat("No tags found for "+artist); return}
+			API.sendChat(data.artist.tags.tag.map(function(a){return a.name[0].toUpperCase()+a.name.slice(1)}).join(", ")+".")
+		})
+	}
+	, playcount: function(uid, name, artist){
+		var artist = !!artist ? argumentsSlice(arguments,2) : API.getMedia().author
+		$.getJSON(LASTFM.getinfo(artist), function(data){
+			if (data.error){API.sendChat(data.message); return}
+			if (!data.artist.stats.userplaycount){API.sendChat(artist+" haven't been played in this room before."); return}
+			API.sendChat(artist+" has been played "+data.artist.stats.userplaycount+" times in this room")
+		})
 	}
 };
 
@@ -1551,7 +1593,7 @@ chatVarious = {
 	}
 };
 
-chatUser = {/* User commands are loaded from the localStorage, with property being the command and value — response. */};
+chatUser = {/* User commands are loaded from localStorage, with property being the command and value — response. */};
 
 			// MUTATION OBSERVER
 function surveillance(mutation){
@@ -1851,6 +1893,7 @@ function toggleCycle(manual){
 		if (queue>14 && DJCYCLE!=false){
 			API.moderateDJCycle(false)
 			DJCYCLE = false
+			API.sendChat("@djs Цикл отключен! Не забываем вставать в очередь!")
 		}
 		if (queue<10 && DJCYCLE!=true){
 			API.moderateDJCycle(true)
@@ -2023,7 +2066,11 @@ function kittLog(object){
 	}
 }
 
-function deepObject(object,property){if (object[property] !== undefined){return object[property] = object[property]}};
+function deepObject(object,property){
+	if (object[property] !== undefined){
+		return object[property] = object[property]
+	}
+};
 
 function argumentsSlice(object, start, stop){
 	/* Recursive slice of 'arguments' object to join the necessary properties into one string. 
@@ -2611,7 +2658,16 @@ function checkSpam(uid, name, command){
 		return true
 	};
 	return false
-}
+};
+
+function addNoCycle(advance_object){
+	if (!advance_object.lastPlay){return}
+	var dj = advance_object.lastPlay.dj
+	if (PATRONS[dj.id].cycleadd){
+		API.moderateAddDJ(String(dj.id))
+		PATRONS[dj.id].cycleadd = false
+	}
+};
 
 			// MODERATION
 function moveInList(UPN){
@@ -2954,6 +3010,7 @@ function Patron(id){
 	this.alarm = false
 	this.leave = [false, false]
 	this.dropped = [0,0]
+	this.cycleadd = false
 		// stats
 	this.commands = 0
 	this.messages = 0
