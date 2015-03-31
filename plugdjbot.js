@@ -10,9 +10,8 @@
 TO DO:
 5. Song titles filtering/fixing. (add video-id array, (and|ft[.]*|&), case-independent, artist-title switched up).
 9. Add mute for longer than 45 minutes and ban for longer than one day (but not permanent). Has to be localStorage then.
-10. !iwanttocycleevenwithdjcycleturnedoff.
 12. Redo the way commands are called again. make them all have one single argument with relevant properties.
-13. 
+14.  
 */
 
 
@@ -39,7 +38,7 @@ var WLCMSG = ""											// Welcome message.
 // var SKIPS = {last: null, record: [], skipmixtime: null}	// Keeps track of all the skipped tracks. Loaded from the localStorage.
 
 // What type of commands to respond to or actions to take.
-var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true,
+var SETTINGS = {fun: true, tools: true, various: true, usercomm: true, mehskip: true, scrobble: true,
 				autocycle: true, mrazota: true, sameartist: true, setstaff: true, spam: true,
 				stuck: true, welcome: true, swear: true, games: {hangman: true, russian: true}}
 // Some of the settings can only be changed by a few chosen people.
@@ -81,6 +80,11 @@ Object.defineProperties(SETTINGS,{
 		enumerable: false,
 		writable: true,
 		value: []
+	},
+	'concheck':{
+		enumerable: false,
+		writable: true,
+		value: true
 	},
 	'setup': {
 		/* Log the time, turn off any existing event listeners, clear timeouts,
@@ -153,13 +157,38 @@ var ALLCOMMANDS = {
 	}
 }
 
-const LASTFM = {
-	apikey: JSON.parse(localStorage.lastfmapikey)
+var LASTFM = {
+	apikey: JSON.parse(localStorage.APIKEY)
+	, apiscr: JSON.parse(localStorage.APISCR)
+	, apisk: JSON.parse(localStorage.APISK)
 	, apiroot: "http://ws.audioscrobbler.com/2.0/"
-	, getinfo: function(artist){return this.apiroot+"?method=artist.getInfo&artist="+artist+this.middleun+this.apikey+this.format}
 	, middle: "&user=dvachbot&api_key="
 	, middleun: "&user=dvachbot&username=dvachbot&api_key="
-	, format: "&format=json"
+	, fjson: "&format=json"
+	, getinfo: function(artist){return this.apiroot+"?method=artist.getInfo&artist="+artist+this.middleun+this.apikey+this.fjson}
+	, scrobble: function(adv){
+		/* If _scrobble is called directly on the API.ADVANCE event — plug.dj blocks the POST method
+		(405 METHOD NOT ALLOWED), so had to make this wrapper. */
+		setTimeout(function(){LASTFM._scrobble(adv)})
+		return
+	}
+	, _scrobble: function(adv){
+		if (!(adv.lastPlay && SETTINGS.scrobble)){return}
+		var duration = adv.lastPlay.media.duration
+		if (duration < 60 || (Date.now() - this.prevscrobble) < 1000*Math.min(duration/2, 240)){return}
+		this.prevscrobble = Date.now()
+		var artist = adv.lastPlay.media.author
+		var track = adv.lastPlay.media.title
+		var timestamp = Math.round(Date.now()/1000)
+		var toHash = 'api_key'+this.apikey+'artist'+artist+'methodtrack.scrobble'+'sk'+
+					  this.apisk+'timestamp'+timestamp+'track'+track+this.apiscr
+		var apisig = MD5.md5(toHash)
+		var postdata = 'artist='+artist+'&track='+track+'&timestamp='+timestamp+'&sk='+
+					   this.apisk+'&api_sig='+apisig+'&api_key='+this.apikey+'&method=track.scrobble'
+		$.post(this.apiroot,postdata)
+		return
+	}
+	, prevscrobble: Date.now()
 }
 
 var prev_chat_uid = 0;										// Some global counters/trackers.
@@ -248,7 +277,7 @@ botStart = function(){
 		kittLog(message)
 		prev_chat_uid = this_chat_uid
 		this_chat_uid = message.uid
-// 		if (swearingMute(message)){return}
+// 		if (swearingMute(message)){return} // Community did not like this feature.
 		if (message.message[0]===COMMAND_SYMBOL){
 			chatClassifier(message)
 		}
@@ -285,7 +314,7 @@ botStart = function(){
 	/* On DJ advance check if he is in the dropped_users_list list to prevent !lastpos abuse
 	Updates scrobble list, song length stats, checks if the song is absurdly long while 
 	people are in a queue, adds tweek if she's not in the list, tags users as "played"
-	and updates songplays/score counters of a user. */
+	and updates songplays/score counters of a user. Scrobbles to last.fm! */
 	API.on(API.ADVANCE, checkDJ);
 	API.on(API.ADVANCE, songlistUpdate);
 	API.on(API.ADVANCE, statisticUpdate);
@@ -296,7 +325,8 @@ botStart = function(){
 	API.on(API.ADVANCE, patronPlayed);
 	API.on(API.ADVANCE, patronScore);
 	API.on(API.ADVANCE, addNoCycle);
-	
+	API.on(API.ADVANCE, LASTFM.scrobble);
+
 		/* Updates some info of a user. Sends him a welcome message, if set. */
 	API.on(API.USER_JOIN, patronJoin);
 	API.on(API.USER_JOIN, welcomeUser);
@@ -414,8 +444,8 @@ chatCommands = {
 		return
 	}
 		// Control
-	, restart: function(){
-		botRestart()
+	, restart: function(time){
+		setTimeout(botRestart,time*1000)
 		return
 	}
 	, stream: function(on){
@@ -1347,7 +1377,7 @@ chatTools = {
 		$.getJSON(LASTFM.getinfo(artist), function(data){
 			if (data.error){API.sendChat(data.message); return}
 			if (!data.artist.stats.userplaycount){API.sendChat(artist+" haven't been played in this room before."); return}
-			API.sendChat(artist+" has been played "+data.artist.stats.userplaycount+" times in this room")
+			API.sendChat(artist+" has been played "+data.artist.stats.userplaycount+" times in this room.")
 		})
 	}
 };
@@ -1390,7 +1420,7 @@ chatFun = {
 		} else {
 			var target = name
 		}
-		if (PATRONS[uid].cats<10){
+		if (PATRONS[uid].asians<10){
 			var ind=Math.floor(Math.random()*asianlinks.length)	// again, not really useful, but asians!
 			API.sendChat("@"+target+" これはペンです. "+asianlinks[ind])
 			PATRONS[uid].asians++
@@ -1428,7 +1458,7 @@ chatFun = {
 	, roll: function(uid, name){
 		/* Roulette. Max two rolls until one becomes a DJ. */
 		if (PATRONS[uid].rolls < 2){
-			var roll=Math.round(Math.random()*roulette.length)
+			var roll=Math.floor(Math.random()*roulette.length)
 			API.sendChat("@"+name+" Your next song must be: "+roulette[roll])
 			PATRONS[uid].rolls++
 		} else {
@@ -3180,5 +3210,160 @@ function letind(word, letter){
   }
   return result;
 };
+
+/* MD5 by Joseph Myers */
+var MD5 = {
+	md5: function(s){
+		var txt = '';
+		var n = s.length;
+		var state = [1732584193, -271733879, -1732584194, 271733878];
+		var i;
+		for (i=64; i<=s.length; i+=64) {
+			this.md5cycle(state, this.md5blk(s.substring(i-64, i)));
+		}
+		s = s.substring(i-64);
+		var tail = [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0];
+		for (i=0; i<s.length; i++){
+			tail[i>>2] |= s.charCodeAt(i) << ((i%4) << 3);
+		}
+		tail[i>>2] |= 0x80 << ((i%4) << 3);
+		if (i > 55) {
+			this.md5cycle(state, tail);
+			for (i=0; i<16; i++) tail[i] = 0;
+		}
+		tail[14] = n*8;
+		this.md5cycle(state, tail);
+		return this.hex(state);
+	}
+	, md5blk: function(s){
+		var md5blks = [], i;
+		for (i=0; i<64; i+=4) {
+			md5blks[i>>2] = s.charCodeAt(i)
+			+ (s.charCodeAt(i+1) << 8)
+			+ (s.charCodeAt(i+2) << 16)
+			+ (s.charCodeAt(i+3) << 24);
+		}
+		return md5blks;
+	}
+	, md5cycle: function(x,k){
+		var a = x[0], b = x[1], c = x[2], d = x[3];
+		
+		a = this.ff(a, b, c, d, k[0], 7, -680876936);
+		d = this.ff(d, a, b, c, k[1], 12, -389564586);
+		c = this.ff(c, d, a, b, k[2], 17,  606105819);
+		b = this.ff(b, c, d, a, k[3], 22, -1044525330);
+		a = this.ff(a, b, c, d, k[4], 7, -176418897);
+		d = this.ff(d, a, b, c, k[5], 12,  1200080426);
+		c = this.ff(c, d, a, b, k[6], 17, -1473231341);
+		b = this.ff(b, c, d, a, k[7], 22, -45705983);
+		a = this.ff(a, b, c, d, k[8], 7,  1770035416);
+		d = this.ff(d, a, b, c, k[9], 12, -1958414417);
+		c = this.ff(c, d, a, b, k[10], 17, -42063);
+		b = this.ff(b, c, d, a, k[11], 22, -1990404162);
+		a = this.ff(a, b, c, d, k[12], 7,  1804603682);
+		d = this.ff(d, a, b, c, k[13], 12, -40341101);
+		c = this.ff(c, d, a, b, k[14], 17, -1502002290);
+		b = this.ff(b, c, d, a, k[15], 22,  1236535329);
+		
+		a = this.gg(a, b, c, d, k[1], 5, -165796510);
+		d = this.gg(d, a, b, c, k[6], 9, -1069501632);
+		c = this.gg(c, d, a, b, k[11], 14,  643717713);
+		b = this.gg(b, c, d, a, k[0], 20, -373897302);
+		a = this.gg(a, b, c, d, k[5], 5, -701558691);
+		d = this.gg(d, a, b, c, k[10], 9,  38016083);
+		c = this.gg(c, d, a, b, k[15], 14, -660478335);
+		b = this.gg(b, c, d, a, k[4], 20, -405537848);
+		a = this.gg(a, b, c, d, k[9], 5,  568446438);
+		d = this.gg(d, a, b, c, k[14], 9, -1019803690);
+		c = this.gg(c, d, a, b, k[3], 14, -187363961);
+		b = this.gg(b, c, d, a, k[8], 20,  1163531501);
+		a = this.gg(a, b, c, d, k[13], 5, -1444681467);
+		d = this.gg(d, a, b, c, k[2], 9, -51403784);
+		c = this.gg(c, d, a, b, k[7], 14,  1735328473);
+		b = this.gg(b, c, d, a, k[12], 20, -1926607734);
+		
+		a = this.hh(a, b, c, d, k[5], 4, -378558);
+		d = this.hh(d, a, b, c, k[8], 11, -2022574463);
+		c = this.hh(c, d, a, b, k[11], 16,  1839030562);
+		b = this.hh(b, c, d, a, k[14], 23, -35309556);
+		a = this.hh(a, b, c, d, k[1], 4, -1530992060);
+		d = this.hh(d, a, b, c, k[4], 11,  1272893353);
+		c = this.hh(c, d, a, b, k[7], 16, -155497632);
+		b = this.hh(b, c, d, a, k[10], 23, -1094730640);
+		a = this.hh(a, b, c, d, k[13], 4,  681279174);
+		d = this.hh(d, a, b, c, k[0], 11, -358537222);
+		c = this.hh(c, d, a, b, k[3], 16, -722521979);
+		b = this.hh(b, c, d, a, k[6], 23,  76029189);
+		a = this.hh(a, b, c, d, k[9], 4, -640364487);
+		d = this.hh(d, a, b, c, k[12], 11, -421815835);
+		c = this.hh(c, d, a, b, k[15], 16,  530742520);
+		b = this.hh(b, c, d, a, k[2], 23, -995338651);
+		
+		a = this.ii(a, b, c, d, k[0], 6, -198630844);
+		d = this.ii(d, a, b, c, k[7], 10,  1126891415);
+		c = this.ii(c, d, a, b, k[14], 15, -1416354905);
+		b = this.ii(b, c, d, a, k[5], 21, -57434055);
+		a = this.ii(a, b, c, d, k[12], 6,  1700485571);
+		d = this.ii(d, a, b, c, k[3], 10, -1894986606);
+		c = this.ii(c, d, a, b, k[10], 15, -1051523);
+		b = this.ii(b, c, d, a, k[1], 21, -2054922799);
+		a = this.ii(a, b, c, d, k[8], 6,  1873313359);
+		d = this.ii(d, a, b, c, k[15], 10, -30611744);
+		c = this.ii(c, d, a, b, k[6], 15, -1560198380);
+		b = this.ii(b, c, d, a, k[13], 21,  1309151649);
+		a = this.ii(a, b, c, d, k[4], 6, -145523070);
+		d = this.ii(d, a, b, c, k[11], 10, -1120210379);
+		c = this.ii(c, d, a, b, k[2], 15,  718787259);
+		b = this.ii(b, c, d, a, k[9], 21, -343485551);
+		
+		x[0] = this.add32(a, x[0]);
+		x[1] = this.add32(b, x[1]);
+		x[2] = this.add32(c, x[2]);
+		x[3] = this.add32(d, x[3]);
+	}
+	, hex_chr: '0123456789abcdef'.split('')
+	, rhex: function(n){
+		var s='', j=0;
+		for(; j<4; j++){
+			s += this.hex_chr[(n >> (j * 8 + 4)) & 0x0F]
+			+ this.hex_chr[(n >> (j * 8)) & 0x0F];
+		}
+		return s;
+	}
+	, hex: function (x) {
+		for (var i=0; i<x.length; i++){
+			x[i] = this.rhex(x[i]);
+		}
+		return x.join('');
+	}
+	, add32: function(a,b){
+		return (a + b) & 0xFFFFFFFF;
+	}
+	, cmn: function(q, a, b, x, s, t){
+		a = this.add32(this.add32(a, q), this.add32(x, t));
+		return this.add32((a << s) | (a >>> (32 - s)), b);
+	}
+	, ff: function(a, b, c, d, x, s, t){
+		return this.cmn((b & c) | ((~b) & d), a, b, x, s, t);
+	}
+	, gg: function(a, b, c, d, x, s, t){
+		return this.cmn((b & d) | (c & (~d)), a, b, x, s, t);
+	}
+	, hh: function(a, b, c, d, x, s, t){
+		return this.cmn(b ^ c ^ d, a, b, x, s, t);
+	}
+	, ii: function(a, b, c, d, x, s, t){
+		return this.cmn(c ^ (b | (~d)), a, b, x, s, t);
+	}
+	, some_fix: function(){
+		if (this.md5('hello') != '5d41402abc4b2a76b9719d911017c592'){
+			this.add32 = function(x,y){
+				var lsw = (x & 0xFFFF) + (y & 0xFFFF),
+				msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+				return (msw << 16) | (lsw & 0xFFFF);
+			}
+		}
+	}
+}
 
 start()
