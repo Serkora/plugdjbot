@@ -110,7 +110,7 @@ Object.defineProperties(SETTINGS,{
 					chatTools.alternatives()
 					chatFun.alternatives()
 					getBansAndMutes()
-					setTimeout(function(){SETTINGS.log = false},5000)
+					timeouts.log = setTimeout(function(){SETTINGS.log = false},5000)
 					Object.defineProperty(PATRONS,'length', {
 						get: function(){var l=0; for (var key in this){l++}; return l}
 					})
@@ -174,8 +174,16 @@ var LASTFM = {
 	}
 	, _scrobble: function(adv){
 		if (!(adv.lastPlay && SETTINGS.scrobble)){return}
+		if (LASTFM.noscrobble){
+			LASTFM.noscrobble = false
+			kittLog(adv.lastPlay.media+" is not being scrobbled")
+			return
+		}
 		var duration = adv.lastPlay.media.duration
-		if (duration < 60 || (Date.now() - this.prevscrobble) < 1000*Math.min(duration/2, 240)){return}
+		if (duration < 60 || (Date.now() - this.prevscrobble) < 1000*Math.min(duration/2, 240)){
+			kittLog("Not scrobbling. Track duration: "+duration+"; passed: "+Math.round((Date.now() - this.prevscrobble)/1000)+".")
+			return
+		}
 		this.prevscrobble = Date.now()
 		var artist = adv.lastPlay.media.author
 		var track = adv.lastPlay.media.title
@@ -185,7 +193,7 @@ var LASTFM = {
 		var apisig = MD5.md5(toHash)
 		var postdata = 'artist='+artist+'&track='+track+'&timestamp='+timestamp+'&sk='+
 					   this.apisk+'&api_sig='+apisig+'&api_key='+this.apikey+'&method=track.scrobble'
-		$.post(this.apiroot,postdata)
+		$.post(this.apiroot,postdata, function(resp){kittLog(resp)})
 		return
 	}
 	, prevscrobble: Date.now()
@@ -967,6 +975,11 @@ chatControl = {
 		for (var i=0; i<100; i++){
 			API.sendChat("FUCK YOU FUCK YOU FUCK YOU")
 		}
+		return
+	}
+	, noscrobble: function(uid){
+		if (!assertPermission(uid,3)){return}
+		LASTFM.noscrobble = true
 		return
 	}
 };
@@ -2837,6 +2850,7 @@ function patronJoin(user){
 		PATRONS[user.id] = patron
 		if (patron.name === "твик"){
 			chatFun.meow(patron.id, patron.name, patron.name)
+			PATRONS[user.id].cats -= 1
 		}
 	}
 	return
