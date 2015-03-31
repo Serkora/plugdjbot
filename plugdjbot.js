@@ -1992,6 +1992,8 @@ function recordSkip(mod,mix){
 		var current = API.getMedia()
 		var songs = API.getHistory().slice(0,2)
 		var elapsed = API.getTimeElapsed()
+		var total = API.getMedia().duration
+		var queue = API.getWaitList().length
 		if (elapsed<10){
 			var song = songs[1]
 		} else {
@@ -2004,7 +2006,8 @@ function recordSkip(mod,mix){
 		}
 		var time = new Date()
 		time = time.getFullYear()+"/"+(time.getMonth()+1)+"/"+time.getDate()+" "+("0"+time.getHours()).slice(-2)+":"+("0"+time.getMinutes()).slice(-2)
-		var text = time+" "+mod+" skipped "+song.media.author+" - "+song.media.title+link+" when the score was "+JSON.stringify(song.score)
+		var text = time+" "+mod+" skipped "+song.media.author+" - "+song.media.title+link+" when the score was "+JSON.stringify(song.score)+
+				   ". Total time: "+total+"; Elapsed time: "+elapsed+"; People in queue: "+queue
 		if (mix){
 			var skipmix = "Skipmix initiated by "+mod+" with a duration of "+mix+" seconds."
 			SKIPS.record.push([Date.now(), text, skipmix])
