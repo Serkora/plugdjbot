@@ -530,7 +530,7 @@ chatCommands = {
 			DATA[localstoragekeys[i]] = GLOBAL[localstoragekeys[i]]
 		}
 		var expdata = "BACKUP\n"+hash+"\n"+JSON.stringify(DATA)
-		$.post('http://'+localStorage.getObject('BCKIP')+':9020',expdata,API.chatLog)
+		sendToKARR(expdata,API.chatLog)
 		return
 	}
 	, export: function(path, start, stop){
@@ -1579,6 +1579,10 @@ chatFun = {
 		API.sendChat(text)
 		return
 	}
+	, picture: function(uid, name, query /* *query */){
+		query = argumentsSlice(arguments,2)
+		sendToKARR("RNDPIC\n"+query,API.sendChat)
+	}
 };
 
 chatGames = {
@@ -2121,6 +2125,10 @@ function kittLog(object){
 		var time = dt.getDate()+"/"+(dt.getMonth()+1)+" "+dt.getHours()+":"+dt.getMinutes()+" "
 		console.log(time, object)
 	}
+}
+
+function sendToKARR(data,callback){
+	$.post('http://'+localStorage.getObject('KARRIP')+':9020',data,callback)
 }
 
 function deepObject(object,property){

@@ -3,9 +3,18 @@ import hashlib
 import os
 from sys import argv
 
+import json
+import requests
+import pickle
+import random
+
+
 ROOT = "/".join(os.path.abspath(__file__).split("/")[:-2])+"/"
 with open(ROOT+'files/kittsha224.txt','r') as pwdf:
 	CORRECT_PASSWORD_SHA224 = pwdf.readlines()[0]
+
+with open(ROOT+'files/gglimg.pck') as imgf:
+	google_images = pickle.load(imgf)
 
 class CORSHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 	
@@ -59,6 +68,60 @@ class CORSHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			f.close()
 			self.tr_prep()
 			self.wfile.write("Backed everything up successfully!")
+			
+	def c_RNDPIC(self,query):
+		"""
+		Retrieve a link to a random picture from google image search.
+		Also save the results to use in the future for the same query.
+		
+		resnum		Last requested 'page', which was saved to file to save
+					request numbers while still having lots of results.
+		links		Array of previously saved links (loaded from file) or an empty
+					array to which new results will be concatenated
+		endofres	True/False. If True - no more new results for that query, so
+					stop even trying and save those precious free requests!
+		
+		If endofres AND saved links array is empty - bad query, send 'no results'
+		and return from function.
+		"""
+		if query in google_images:
+			start = google_images[query]['resnum']
+			links = google_images[query]['links']
+			endofres = google_images[query]['endofres']
+			if len(links) == 0 and endofres:
+				self.tr_prep()
+				self.wfile.write("No results found.")
+				return
+		else:
+			google_images[query] = {}
+			links = []
+			start = 0
+			endofres = False
+		url = 'https://ajax.googleapis.com/ajax/services/search/images?v=1.0&q=' + query + '&start=%d'
+		results = []
+		if not endofres:
+			for i in range(start,start+3):
+				r = json.loads(requests.get(url % i).text)
+				results += r['responseData']['results']
+				if len(results) == 0:
+					endofres = True
+					break
+		if len(results)>0:
+			links += map(self.json_images_links,results)
+			ind = random.randint(0,len(links)-1)
+		self.tr_prep()
+		if len(links) > 0:
+			self.wfile.write(links[ind])
+		else:
+			self.wfile.write("No results found.")
+		google_images[query]['resnum'] = start+3
+		google_images[query]['links'] = links
+		google_images[query]['endofres'] = endofres
+		with open(ROOT+'files/gglimg.pck','w') as imgf:
+			pickle.dump(google_images,imgf)
+	
+	def json_images_links(self,element):
+		return str(element['unescapedUrl'])
 		
 	def tr_prep(self,type='text/plain'):
 		"""
