@@ -530,7 +530,7 @@ chatCommands = {
 			DATA[localstoragekeys[i]] = GLOBAL[localstoragekeys[i]]
 		}
 		var expdata = "BACKUP\n"+hash+"\n"+JSON.stringify(DATA)
-		$.post('http://'+localStorage.getObject('BCKIP')+':9020',expdata,function(a){console.log(a)})
+		$.post('http://'+localStorage.getObject('BCKIP')+':9020',expdata,API.chatLog)
 		return
 	}
 	, export: function(path, start, stop){

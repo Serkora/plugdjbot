@@ -129,10 +129,10 @@ if __name__ == "__main__":
 		PORT = 9020
 		IP = ""
 
-	KITT = CORSHTTPRequestHandler
+	Handler = CORSHTTPRequestHandler
 	#Handler = SimpleHTTPServer.SimpleHTTPRequestHandler
  
-	KARR = SocketServer.TCPServer((IP, PORT), KITT)
+	KARR = SocketServer.TCPServer((IP, PORT), Handler)
  
 	print("Serving at port "+str(PORT))
 	KARR.serve_forever()
