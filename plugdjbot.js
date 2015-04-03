@@ -522,6 +522,17 @@ chatCommands = {
 		return
 	}
 		// Export/import/print
+	, backup: function(){
+		hash = localStorage.getObject('BCKPWH')
+		var DATA = Object.create(null)
+		DATA['localstoragekeys'] = localstoragekeys
+		for (var i = 0; i<localstoragekeys.length; i++){
+			DATA[localstoragekeys[i]] = GLOBAL[localstoragekeys[i]]
+		}
+		var expdata = "BACKUP\n"+hash+"\n"+JSON.stringify(DATA)
+		$.post('http://'+localStorage.getObject('BCKIP')+':9020',expdata,function(a){console.log(a)})
+		return
+	}
 	, export: function(path, start, stop){
 		/* Export the contents of an object to the new window. If an array, can be sliced to export only part of it. */
 		var variable = path.split(".")[0]
@@ -1015,11 +1026,11 @@ chatTools = {
 		
 		var place = PATRONS[tid].dropped[1]
 		var time = PATRONS[tid].dropped[0]
+		if (time == 0){API.sendChat("@"+target+", You are not in the list, sorry."); return}
 		if ((Date.now() - time) > 1*60*60*1000){
 			API.sendChat("@"+target+", You've been disconnected for too long. But your last place was "+place+" on "+String(new Date(time))+".")
 			return
 		}
-		if (time == 0){API.sendChat("@"+target+", You are not in the list, sorry."); return}
 		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)){
 			chatTools.move("lastpos",tid,place)
 			setTimeout(function(){
