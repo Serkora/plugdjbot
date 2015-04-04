@@ -1580,7 +1580,8 @@ chatFun = {
 		return
 	}
 	, picture: function(uid, name, query /* *query */){
-		query = argumentsSlice(arguments,2)
+		if (!query){return}
+		query = argumentsSlice(arguments,2).replace(/\\n/g," ").replace(/\n/g," ")
 		sendToKARR("RNDPIC\n"+query,API.sendChat)
 	}
 };
