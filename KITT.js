@@ -1581,8 +1581,14 @@ chatFun = {
 	}
 	, picture: function(uid, name, query /* *query */){
 		if (!query){return}
-		query = argumentsSlice(arguments,2).replace(/\\n/g," ").replace(/\n/g," ")
-		sendToKARR("RNDPIC\n"+query,API.sendChat)
+		if (query == "_local"){
+			var local = "local"
+			query = argumentsSlice(arguments,3).replace(/\\n/g," ").replace(/\n/g," ")
+		} else {
+			var local = ""
+			query = argumentsSlice(arguments,2).replace(/\\n/g," ").replace(/\n/g," ")
+		}
+		sendToKARR("RNDPIC\n"+local+"\n"+query,API.sendChat)
 	}
 };
 

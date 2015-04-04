@@ -69,7 +69,7 @@ class CORSHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			self.tr_prep()
 			self.wfile.write("Backed everything up successfully!")
 			
-	def c_RNDPIC(self,query):
+	def c_RNDPIC(self,local,query):
 		"""
 		Retrieve a link to a random picture from google image search.
 		Also save the results to use in the future for the same query.
@@ -99,18 +99,18 @@ class CORSHTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 			endofres = False
 		url = 'https://ajax.googleapis.com/ajax/services/search/images?v=1.0&q=' + query + '&start=%d'
 		results = []
-		if not endofres:
+		if not endofres and not local:
 			for i in range(start,start+3):
 				r = json.loads(requests.get(url % i).text)
 				results += r['responseData']['results']
 				if len(results) == 0:
 					endofres = True
 					break
-		if len(results)>0:
+		if len(results)>0: 
 			links += map(self.json_images_links,results)
-			ind = random.randint(0,len(links)-1)
 		self.tr_prep()
 		if len(links) > 0:
+			ind = random.randint(0,len(links)-1)
 			self.wfile.write(links[ind])
 		else:
 			self.wfile.write("No results found.")
@@ -184,8 +184,8 @@ if __name__ == "__main__":
 
 	if len(argv)>2:
 		PORT = int(argv[2])
-		IP = int(argv[1])
-	if len(argv)>1:
+		IP = argv[1]
+	elif len(argv)>1:
 		PORT = int(argv[1])
 		IP = ""
 	else:
