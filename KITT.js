@@ -297,7 +297,7 @@ botStart = function(){
 			// Random reply (either a short phrase or a line from some song; KITT loves Bon Jovi and Phil Collins)
 		if (message.message.split(" ")[0]==="@K.I.T.T." && message.un!="K.I.T.T." && message.uid!=5433970) {
 			if (Math.random()>1){
-				API.sendChat("@"+message.un+" "+atresponses[Math.floor(Math.random()*atresponses.length)])
+				kittSendChat("@"+message.un+" "+atresponses[Math.floor(Math.random()*atresponses.length)])
 			}
 			return
 		}
@@ -319,7 +319,7 @@ botStart = function(){
 	API.on(API.WAIT_LIST_UPDATE, wakeUp);
 	API.on(API.WAIT_LIST_UPDATE, removeFromList);
 	
-	/* On DJ advance check if he is in the dropped_users_list list to prevent !lastpos abuse
+	/* On DJ advance check if he had dropped previously to prevent !lastpos abuse
 	Updates scrobble list, song length stats, checks if the song is absurdly long while 
 	people are in a queue, adds tweek if she's not in the list, tags users as "played"
 	and updates songplays/score counters of a user. Scrobbles to last.fm! */
@@ -348,8 +348,8 @@ botStart = function(){
 	/* Score update events */	
 	API.on(API.SCORE_UPDATE, updateScore);
 	/* Compares the votes and calls "mehSkip" in 5 seconds.
-	If there are still 5+ more mehs than woots — skips.
-	If at any point mehs go below the threshold, resets the timer. */
+	If there are enough — skips. If at any point mehs go below 
+	the threshold, resets the timer. */
 	API.on(API.SCORE_UPDATE,function(score){
 		if (!timeouts.skip && enoughToSkip()){
 			timeouts.skip = setTimeout(function(){mehSkip()},(5000))
@@ -392,7 +392,7 @@ botIdle = function(){
 	console.log("idling...")
 	API.on(API.CHAT, function(data){
 		if (data.message==="!botstart" && STATE==="idle" && assertPermission(data.uid,3)){
-			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
+			kittSendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 			clearTimeouts("all")
 			botStart()
 			return
@@ -412,7 +412,7 @@ botRestart = function(){
 
 botHangman = function(language){
 	if (["ru","eng"].indexOf(language)<0){return}
-// 	if (mode === "hangman"){API.sendChat("You are already playing the game!")}
+// 	if (mode === "hangman"){kittSendChat("You are already playing the game!")}
 	kittLog("Starting Hangman!")
 	API.off(API.CHAT, hangmanChat)
 	mode = "hangman"
@@ -433,10 +433,10 @@ botHangman = function(language){
 	}
 	HANGMAN.count = 0
 	HANGMAN.tried = []
-	API.sendChat("Let's play Hangman in "+HANGMAN.language+"!")
-	setTimeout(function(){API.sendChat(HANGMAN.uword)},(250))
+	kittSendChat("Let's play Hangman in "+HANGMAN.language+"!")
+	setTimeout(function(){kittSendChat(HANGMAN.uword)},(250))
 	kittLog(HANGMAN.word)
-	setTimeout(function(){API.sendChat('Guess a letter or the word by typing "!letter _"/"!lt _" or "!word ___". You have 10 guesses.')},(500))
+	setTimeout(function(){kittSendChat('Guess a letter or the word by typing "!letter _"/"!lt _" or "!word ___". You have 10 guesses.')},(500))
 	API.on(API.CHAT, hangmanChat)
 };
 
@@ -464,7 +464,7 @@ chatCommands = {
 			setTimeout(function(){$("div.item.s-av.selected").click()},250)
 		}
 		setTimeout(function(){$("div.back").click()},500)
-		API.sendChat("/cap 1")
+		kittSendChat("/cap 1")
 	}
 	, flushlimits: function(){
 		for (key in PATRONS){
@@ -579,7 +579,7 @@ chatCommands = {
 			file.readAsText(fileval)
 			return
 		}
-		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(\'/importall load\')"/></div>')
+		$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="kittSendChat(\'/importall load\')"/></div>')
 		return
 	}
 	, print: function(path, start, stop){
@@ -679,7 +679,7 @@ chatCommands = {
 			file.readAsText(fileval)
 		} else {
 			window['savecom'] = "/loadfile "+variable+" "+type+" save"
-			$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="API.sendChat(savecom)"/></div>') 
+			$('#chat-messages').append('<div><input id="dropfile" type="file" onchange="kittSendChat(savecom)"/></div>') 
 		}
 		return
 		
@@ -789,7 +789,7 @@ function chatClassifier(message){
 	
 		// If kittex is trying to use the bot, along with an action (if proper command was given) will also piss on him.
 	if (name==="SomethingNew"){				
-		setTimeout(function(){API.sendChat("@SomethingNew PSSSSSSSSS")},1500)
+		setTimeout(function(){kittSendChat("@SomethingNew PSSSSSSSSS")},1500)
 	};
 
 		// Actual classification.
@@ -814,7 +814,7 @@ function chatClassifier(message){
 		return
 	}
 	if (command in chatUser && SETTINGS.usercomm){
-		API.sendChat(chatUser[command])
+		kittSendChat(chatUser[command])
 		return
 	}
 	return
@@ -829,7 +829,7 @@ chatControl = {
 		starts the one that waits for "!botstart" command only. */
 		if (assertPermission(uid,3) && STATE === "running"){
 			STATE = "idle"
-			API.sendChat('I only have about 30 seconds of voice transmission left.')
+			kittSendChat('I only have about 30 seconds of voice transmission left.')
 			timeout.idle = setTimeout(botIdle,30*1000)
 		}
 		return
@@ -845,7 +845,7 @@ chatControl = {
 		if (!assertPermission(uid,3)){return}
 		if (setting){
 			var val = setting.split(".").reduce(deepObject,SETTINGS)
-			if (val !== undefined){API.sendChat(setting+": "+['off','on'][+val]); return}
+			if (val !== undefined){kittSendChat(setting+": "+['off','on'][+val]); return}
 		}
 		var chat = ""
 		for (var setting in SETTINGS){
@@ -860,7 +860,7 @@ chatControl = {
 			}
 		}
 		chat = chat.slice(0,-2)+"."
-		API.sendChat(chat)
+		kittSendChat(chat)
 		return
 	}
 	, enable: function(uid, setting){
@@ -943,8 +943,8 @@ chatControl = {
 		at the event of sorts, since "wait list lock" does not affect them, but 
 		they don't always behave well. Simply removes anyone that joins the list.*/
 		if (!assertPermission(uid,0)){return}
-		API.sendChat("/me airstrike alarm")
-		setTimeout(function(){API.sendChat("Waitlist is in lockdown.")},500)
+		kittSendChat("/me airstrike alarm")
+		setTimeout(function(){kittSendChat("Waitlist is in lockdown.")},500)
 		global_uid = uid
 		SETTINGS.locklist=true
 		API.moderateLockWaitList(true,true)
@@ -984,7 +984,7 @@ chatControl = {
 			localStorage[key] = null
 		}
 		for (var i=0; i<100; i++){
-			API.sendChat("FUCK YOU FUCK YOU FUCK YOU")
+			kittSendChat("FUCK YOU FUCK YOU FUCK YOU")
 		}
 		return
 	}
@@ -1016,29 +1016,29 @@ chatTools = {
 		if (target){
 			var target = argumentsSlice(arguments,2)
 			if (target==="_chat"){
-				API.sendChat(name+"'s place was "+PATRONS[uid].dropped[1]+" on "+String(new Date(PATRONS[uid].dropped[0])))
+				kittSendChat(name+"'s place was "+PATRONS[uid].dropped[1]+" on "+String(new Date(PATRONS[uid].dropped[0])))
 				return
 			}
 			var tid = getUID(target)
 			var target = getName(tid) || target
-			if (!tid){API.sendChat("Invalid name '"+target+"'."); return}
+			if (!tid){kittSendChat("Invalid name '"+target+"'."); return}
 		} else {var tid = uid; var target = name}
 		
 		var place = PATRONS[tid].dropped[1]
 		var time = PATRONS[tid].dropped[0]
-		if (time == 0){API.sendChat("@"+target+", You are not in the list, sorry."); return}
+		if (time == 0){kittSendChat("@"+target+", You are not in the list, sorry."); return}
 		if ((Date.now() - time) > 1*60*60*1000){
-			API.sendChat("@"+target+", You've been disconnected for too long. But your last place was "+place+" on "+String(new Date(time))+".")
+			kittSendChat("@"+target+", You've been disconnected for too long. But your last place was "+place+" on "+String(new Date(time))+".")
 			return
 		}
 		if (!findInQueue(tid)[0] || !(findInQueue(tid)[1]<place)){
 			chatTools.move("lastpos",tid,place)
 			setTimeout(function(){
 					if (mutationlists.users_to_add[tid]){
-						API.sendChat("Unable to add @"+target+" to wait list. Refresh the page and try again. Your last position was "+place)
+						kittSendChat("Unable to add @"+target+" to wait list. Refresh the page and try again. Your last position was "+place)
 					}
 					if (mutationlists.users_to_move[tid] && !mutationlists.users_to_add[tid]){
-						API.sendChat("Unable to move @"+target+". Refresh the page and try again. Your last position was "+place)
+						kittSendChat("Unable to move @"+target+". Refresh the page and try again. Your last position was "+place)
 					}
 					delete mutationlists.users_to_move[tid]
 					delete mutationlists.users_to_add[tid]
@@ -1062,7 +1062,7 @@ chatTools = {
 // 				if (compareSongInList(songlist[i],song)) {console.log('FUNCTION TRUE')} else {console.log ('FUNCTION FALSE')}
 				dt = new Date(songlist[i][3])
 				date = (dt.getYear()+1900)+"/"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+dt.getHours()+":"+("0"+dt.getMinutes()).slice(-2)+" GMT+03"
-				API.sendChat(song.author+" — "+song.title+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
+				kittSendChat(song.author+" — "+song.title+" was last played "+date+". "+songlist[i][4]+" plays in total in this room since The Creation.")
 				break
 			}
 		}
@@ -1080,7 +1080,7 @@ chatTools = {
 			return
 		}
 		if (arg==="stop"){
-			API.sendChat("Cancelling skip.")
+			kittSendChat("Cancelling skip.")
 			clearTimeouts("skipmix")
 			SKIPS.skipmixtime = null
 			return
@@ -1100,25 +1100,25 @@ chatTools = {
 		if (isNaN(+arg)){return}
 		if (timeouts.skipmix){
 			var skipin = SKIPS.skipmixtime - Date.now()
-			API.sendChat("Skip has already been initialised and the song will be skipped in "+(skipin/1000/60).toFixed(2)+' minutes. Type "!skip stop" to cancel.')
+			kittSendChat("Skip has already been initialised and the song will be skipped in "+(skipin/1000/60).toFixed(2)+' minutes. Type "!skip stop" to cancel.')
 			return
 		}
 		var duration = +arg<=15 ? +arg*60 : +arg
 		if (API.getTimeRemaining() < duration){
-			API.sendChat("Entered time is longer than the song's duration.")
+			kittSendChat("Entered time is longer than the song's duration.")
 			return
 		}
 		timeouts.skipmix = setTimeout(skipMix,duration*1000, API.getMedia().cid, duration, name)
 		SKIPS.skipmixtime = Date.now() + duration*1000
 		var durchat = (duration/60)%1 === 0 ? duration/60 : (duration/60).toFixed(2)
-		API.sendChat("This song will be skipped in "+durchat+" minutes.")
+		kittSendChat("This song will be skipped in "+durchat+" minutes.")
 		return
 	}
 	, boooring: function(uid, name){
 		/* Skips longs tracks. */
 		var dur = API.getMedia().duration
 		if (dur>660 && enoughToSkip("loong")){
-			API.sendChat("Track is too long. Skipping")
+			kittSendChat("Track is too long. Skipping")
 			API.moderateForceSkip()
 		}
 		return
@@ -1152,18 +1152,18 @@ chatTools = {
 		target = getName(tid) || target
 		if (tid) {
 			if (PATRONS[tid].online){
-				API.sendChat(target+" is in the room, dummy!")
+				kittSendChat(target+" is in the room, dummy!")
 			} else {
 				var lastseen = PATRONS[tid].lastseen
-				API.sendChat(target+" was last seen on "+ new Date(lastseen))
+				kittSendChat(target+" was last seen on "+ new Date(lastseen))
 			}
 		} else {
-			API.sendChat(target+" has never been to this room.")
+			kittSendChat(target+" has never been to this room.")
 		}
 		return
 	}
 	, postсount: function(uid, name){
-		API.sendChat("@"+name+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
+		kittSendChat("@"+name+" Postcount: "+PATRONS[uid].messages+"; Songs played: "+PATRONS[uid].songplays+"; Commands sent: "+PATRONS[uid].commands+".")
 	}
 	, staff: function(uid, name, target/*, *target, role */){
 		/* Set the role of a user. */
@@ -1172,13 +1172,13 @@ chatTools = {
 		var setter_role = Number(API.getUser(uid).role)
 		var target_role = valid_roles.indexOf(arguments[arguments.length-1]) % 6
 		if (target_role < 0){
-			API.sendChat("Invalid role.")
+			kittSendChat("Invalid role.")
 			return
 		}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
 		if (!tid){
-			API.sendChat("No one by the name of "+target+" has ever been to this room.")
+			kittSendChat("No one by the name of "+target+" has ever been to this room.")
 			return
 		}
 		var target_name = getName(tid)
@@ -1219,7 +1219,7 @@ chatTools = {
 		if (!(assertPermission(uid,2) || typeof uid !='number')){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		if (!tid){API.sendChat("Invalid target"); return}
+		if (!tid){kittSendChat("Invalid target"); return}
 		target = getName(tid)
 		var chat_durations = ["s","m","l","short","medium","long","15","30","45"]
 		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
@@ -1229,13 +1229,13 @@ chatTools = {
 			} else {
 				staffMute({uid: tid, duration: duration})
 			}
-			API.sendChat("@"+target+", you've been muted for "+(duration+1)*15+" minutes.")
+			kittSendChat("@"+target+", you've been muted for "+(duration+1)*15+" minutes.")
 		} else {
 			var dur = Number(argumentsSlice(arguments,-1))
-			if (isNaN(dur) || dur<0.3){API.sendChat("Invalid duration"); return}
-			if (dur>45){API.sendChat("Can't mute for longer than 45 minutes yet. Coming soon!"); return}
+			if (isNaN(dur) || dur<0.3){kittSendChat("Invalid duration"); return}
+			if (dur>45){kittSendChat("Can't mute for longer than 45 minutes yet. Coming soon!"); return}
 			duration = ~~(dur/15)
-			if (typeof uid === 'number'){API.sendChat("@"+target+", you've been muted for "+dur+" minutes.")}
+			if (typeof uid === 'number'){kittSendChat("@"+target+", you've been muted for "+dur+" minutes.")}
 			if (API.getUser(tid).role===0){
 				userMute({uid: tid, duration: duration})
 			} else {
@@ -1249,15 +1249,15 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments,2,-1)
 		var tid = getUID(target)
-		if (!tid || tid===3737285){API.sendChat("Invalid target."); return}
+		if (!tid || tid===3737285){kittSendChat("Invalid target."); return}
 		var chat_durations =["h","d","p","hour","day","perma","h","d","permanent","h","d","forever","1","24","endless"]
 		var duration = chat_durations.indexOf(arguments[arguments.length-1])%3
 		if (duration>=0){
 			userBan({uid: tid, duration: duration})
 		} else {
 			var dur = Number(argumentsSlice(arguments,-1))
-			if (isNaN(dur) || dur<0.005){API.sendChat("Invalid duration."); return}
-			if (dur > 24){API.sendChat("Unable to ban for longer than 24 hours for now. Coming soon!"); return}
+			if (isNaN(dur) || dur<0.005){kittSendChat("Invalid duration."); return}
+			if (dur > 24){kittSendChat("Unable to ban for longer than 24 hours for now. Coming soon!"); return}
 			duration = dur > 1 ? 1 : 0
 			userBan({uid: tid, duration: duration})
 			setTimeout(userUnban,dur*60*60*1000,tid)
@@ -1268,7 +1268,7 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments, 2)
 		var tid = getUID(target)
-		if (!tid){API.sendChat("Invalid target"); return}
+		if (!tid){kittSendChat("Invalid target"); return}
 		userUnmute(tid)
 		return
 	}
@@ -1276,7 +1276,7 @@ chatTools = {
 		if (!assertPermission(uid,2)){return}
 		var target = argumentsSlice(arguments, 2)
 		var tid = getUID(target)
-		if (!tid){API.sendChat("Invalid target"); return}
+		if (!tid){kittSendChat("Invalid target"); return}
 		userUnban(tid)
 		return
 	}
@@ -1288,7 +1288,7 @@ chatTools = {
 		*/
 		if (!assertPermission(uid,3)){return}
 		if (VOTING.proposal || VOTING.proposals) {
-			API.sendChat("The voting is already in progress.")
+			kittSendChat("The voting is already in progress.")
 			return
 		}
 		if (!text){return} // If no proposal, return from function
@@ -1314,8 +1314,8 @@ chatTools = {
 				else {VOTING.propchat+="; "}
 			}
 			if (!(/[.!?]/.test(VOTING.propchat.slice(-2,-1)))) {VOTING.propchat = VOTING.propchat.slice(0,-2)+"."}
-			API.sendChat(VOTING.propchat)
-			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #".')},500)
+			kittSendChat(VOTING.propchat)
+			setTimeout(function(){kittSendChat('Please vote for an option of your choice by typing "!vote #".')},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		} else {
@@ -1324,8 +1324,8 @@ chatTools = {
 			VOTING.voters = []
 			VOTING.proposal = text
 			if (!(/[.!?]/.test(VOTING.proposal.slice(-1)))) {VOTING.proposal += "."}
-			API.sendChat("Let the voting begin. Today's proposal is: "+VOTING.proposal)
-			setTimeout(function(){API.sendChat('Please vote for or against this proposal by typing "!voteyea" or "!votenay".')},500)
+			kittSendChat("Let the voting begin. Today's proposal is: "+VOTING.proposal)
+			setTimeout(function(){kittSendChat('Please vote for or against this proposal by typing "!voteyea" or "!votenay".')},500)
 			API.on(API.CHAT,proposalVoting)
 			API.on(API.CHAT_COMMAND,proposalVoting)
 		}
@@ -1355,14 +1355,14 @@ chatTools = {
 			var text = argumentsSlice(arguments,2)
 			VOTING.signtitle = text
 			VOTING.signedusers = Object.create(null)
-			API.sendChat('People are needed for '+VOTING.signtitle+'! Type "!signup" to join the list.')
+			kittSendChat('People are needed for '+VOTING.signtitle+'! Type "!signup" to join the list.')
 			timeouts.sign = setTimeout(function(){
 				API.off(API.CHAT, enlistment)
 				delete VOTING.signtitle
 				delete VOTING.signedusers
 			},2*60*60*1000)
 		} else {
-				API.sendChat("You have to finish the current enlistment first.")
+				kittSendChat("You have to finish the current enlistment first.")
 		}
 		API.on(API.CHAT, enlistment)
 		return
@@ -1391,17 +1391,17 @@ chatTools = {
 	, tags: function(uid, name, artist){
 		var artist = !!artist ? argumentsSlice(arguments,2) : API.getMedia().author
 		$.getJSON(LASTFM.getinfo(artist), function(data){
-			if (data.error){API.sendChat(data.message); return}
-			if (typeof data.artist.tags !== "object"){API.sendChat("No tags found for "+artist); return}
-			API.sendChat(data.artist.tags.tag.map(function(a){return a.name[0].toUpperCase()+a.name.slice(1)}).join(", ")+".")
+			if (data.error){kittSendChat(data.message); return}
+			if (typeof data.artist.tags !== "object"){kittSendChat("No tags found for "+artist); return}
+			kittSendChat(data.artist.tags.tag.map(function(a){return a.name[0].toUpperCase()+a.name.slice(1)}).join(", ")+".")
 		})
 	}
 	, playcount: function(uid, name, artist){
 		var artist = !!artist ? argumentsSlice(arguments,2) : API.getMedia().author
 		$.getJSON(LASTFM.getinfo(artist), function(data){
-			if (data.error){API.sendChat(data.message); return}
-			if (!data.artist.stats.userplaycount){API.sendChat(artist+" haven't been played in this room before."); return}
-			API.sendChat(artist+" has been played "+data.artist.stats.userplaycount+" times in this room.")
+			if (data.error){kittSendChat(data.message); return}
+			if (!data.artist.stats.userplaycount){kittSendChat(artist+" haven't been played in this room before."); return}
+			kittSendChat(artist+" has been played "+data.artist.stats.userplaycount+" times in this room.")
 		})
 	}
 };
@@ -1414,6 +1414,9 @@ chatFun = {
 	alternatives: function(){
 		this.reroll = this.roll
 	}
+	, randomFromArray(array, target){
+		
+	}
 	, meow: function(uid, name, target/*, *target */){
 		/* Send a random link to a cat picture in chat. */
 		if (target){
@@ -1425,13 +1428,13 @@ chatFun = {
 		}
 		if (PATRONS[uid].cats<10){
 			var ind=Math.floor(Math.random()*catlinks.length)	// again, not really useful, but cats!
-			API.sendChat("@"+target+" Here's your cat, good sir. "+catlinks[ind])
+			kittSendChat("@"+target+" Here's your cat, good sir. "+catlinks[ind])
 			PATRONS[uid].cats++
 			if (PATRONS[uid].cats===1){
 				setTimeout(function(){PATRONS[uid].cats=0},1000*60*60*24)
 			}
 		}else{
-			API.sendChat("I'm sorry, you have exceeded your daily cat limit.")
+			kittSendChat("I'm sorry, you have exceeded your daily cat limit.")
 		}
 		return
 	}
@@ -1446,13 +1449,13 @@ chatFun = {
 		}
 		if (PATRONS[uid].asians<10){
 			var ind=Math.floor(Math.random()*asianlinks.length)	// again, not really useful, but asians!
-			API.sendChat("@"+target+" これはペンです. "+asianlinks[ind])
+			kittSendChat("@"+target+" これはペンです. "+asianlinks[ind])
 			PATRONS[uid].asians++
 			if (PATRONS[uid].asians===1){
 				setTimeout(function(){PATRONS[uid].asians=0},(1000*60*60*24))
 			}
 		}else{
-			API.sendChat("I'm sorry, you have exceeded your daily asians limit")
+			kittSendChat("I'm sorry, you have exceeded your daily asians limit")
 		}
 		return
 	}
@@ -1470,30 +1473,29 @@ chatFun = {
 		} else {
 			var target = name
 		}
-		API.sendChat("@"+target+" Зубочистку?")
+		kittSendChat("@"+target+" Зубочистку?")
 		return
 	}
 	, wowroll: function(uid, name){
 		/* Returns a random number from 0 to 100. Useful for settling arguments. */
 		var roll=Math.round(Math.random()*100)
-		API.sendChat("@"+name+" has rolled "+roll)
+		kittSendChat("@"+name+" has rolled "+roll)
 		return
 	}
 	, roll: function(uid, name){
 		/* Roulette. Max two rolls until one becomes a DJ. */
 		if (PATRONS[uid].rolls < 2){
 			var roll=Math.floor(Math.random()*roulette.length)
-			API.sendChat("@"+name+" Your next song must be: "+roulette[roll])
+			kittSendChat("@"+name+" Your next song must be: "+roulette[roll])
 			PATRONS[uid].rolls++
 		} else {
-			API.sendChat("@"+name+" I'm sorry, you can only reroll once.")
+			kittSendChat("@"+name+" I'm sorry, you can only reroll once.")
 		}
 		return
 	}
 	, tweek: function(uid, name, target/*, *target, number */){
 		/* Sends one of the legendary tweek phrases. */
 		var n = +arguments[arguments.length-1]
-// 		if (!isNaN(n) && (n<-10000 || n > 10000)){return}
 		var tind = n > 0 ? Math.floor((n-1)%tweek.length) : (Math.floor(n)%tweek.length + tweek.length)%tweek.length
 		var index = isNaN(n) ? Math.floor(Math.random()*tweek.length) : tind
 		if (target && isNaN(+target)){
@@ -1501,16 +1503,16 @@ chatFun = {
 			target = getName(getUID(target)) || target
 			target = "@" + target + " "
 		} else {var target = ""}
-		API.sendChat(target+tweek[index])
+		kittSendChat(target+tweek[index])
 		return
 	}
 	, triforce: function(uid, name, proper){
 		if (proper===""){
-			API.sendChat("   ▲")
-			setTimeout(function(){API.sendChat("▲  ▲")},200)
+			kittSendChat("   ▲")
+			setTimeout(function(){kittSendChat("▲  ▲")},200)
 		} else {
-			API.sendChat("▲")
-			setTimeout(function(){API.sendChat("▲  ▲")},200)	
+			kittSendChat("▲")
+			setTimeout(function(){kittSendChat("▲  ▲")},200)	
 		}
 		return
 	}
@@ -1519,7 +1521,7 @@ chatFun = {
 			var target = argumentsSlice(arguments,2)
 			var tid = getUID(target)
 			if (!tid){
-				API.sendChat(target+" has never been to this room.")
+				kittSendChat(target+" has never been to this room.")
 				return
 			}
 			var user = PATRONS[tid]
@@ -1527,23 +1529,23 @@ chatFun = {
 			var user = PATRONS[uid]
 		}
 		var points = user.songplays + user.woots + user.grabs + user.wooted + user.mehed
-		API.sendChat("@"+user.name+", You have "+points+" plugpoints.")
+		kittSendChat("@"+user.name+", You have "+points+" plugpoints.")
 	}
 	, add: function(uid, name, command, response/*, *response */){
 		/* Add a custom bot response to a given command. Cannot reassign default or already existing ones. 
 		Cannot have '!' or '/' at the beginning of a response, except for "/me". */
 		if (!(command && response)) {return}
-		if ((response[0]==="!" || response[0]==="/") && response != "/me"){
-			API.sendChat("You can't start the response with '/' or '!'.")
+		var response = argumentsSlice(arguments,3)	
+		if (/(^[!\/](?!me ))|(^\/me.!)/.test(response)){
+			kittSendChat("You can't start the response with '/' or '!'.")
 			return
 		}
 		var command = command.toLowerCase()
 		if (command[0]==="!"){command = command.slice(1)}
 		if (command in chatUser){
-			API.sendChat("That command already exists.")
+			kittSendChat("That command already exists.")
 			return
 		}
-		var response = argumentsSlice(arguments,3)	
 		chatUser[command] = response
 		chatUser.comminput.push([new Date(), name, command, response])
 		chatCommands.savetolocalstorage(true)
@@ -1574,9 +1576,12 @@ chatFun = {
 			}
 		} else {
 			var text = argumentsSlice(arguments,2)
-			if ((text[0]==="!" || text[0]==="/") && at != "/me" && !assertPermission(uid,0)){return}
 		}
-		API.sendChat(text)
+		if (assertPermission(uid,0)){
+			API.sendChat(text)
+		} else {
+			kittSendChat(text)
+		}
 		return
 	}
 	, picture: function(uid, name, query /* *query */){
@@ -1588,7 +1593,7 @@ chatFun = {
 			var local = ""
 			query = argumentsSlice(arguments,2).replace(/\\n/g," ").replace(/\n/g," ")
 		}
-		sendToKARR("RNDPIC\n"+local+"\n"+query,API.sendChat)
+		sendToKARR("RNDPIC\n"+local+"\n"+query,kittSendChat)
 	}
 };
 
@@ -1611,9 +1616,9 @@ chatVarious = {
 	kitt: function(){
 		/* Just a greeting. */
 		if (Math.random()>=0.3){
- 			API.sendChat("Yes, Michael?")
+ 			kittSendChat("Yes, Michael?")
 		} else{
- 			API.sendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
+ 			kittSendChat("I'm the voice of the Knight Industries Two Thousand's microprocessor. K-I-T-T for easy reference, K.I.T.T. if you prefer.")
 		}
 		return
 	}
@@ -1626,7 +1631,7 @@ chatVarious = {
 					max = [VALENTINES[key],key]
 				}
 			}
-			API.sendChat(max[1]+" is the most loved person in this room with "+max[0]+" valentines on their hands!")
+			kittSendChat(max[1]+" is the most loved person in this room with "+max[0]+" valentines on their hands!")
 			return
 		}
 		var target = argumentsSlice(arguments,2)
@@ -1637,13 +1642,13 @@ chatVarious = {
 			target = target.slice(1)
 		}
 		VALENTINES[target] = VALENTINES[target] + 1 || 1
-		API.sendChat("@"+target+" :chocolate_bar: :heart:")
+		kittSendChat("@"+target+" :chocolate_bar: :heart:")
 		return
 	}
 	, woot: function(uid){if (!assertPermission(uid,0)){return}; $('#woot').click()}
 	, meh: function(uid){if (!assertPermission(uid,0)){return}; $('#meh').click()}
 	, ping: function(uid, name){
-		API.sendChat("@"+name+" pong!")
+		kittSendChat("@"+name+" pong!")
 	}
 	, tweekcycle: function(uid, name){
 		/* Toggle KITT's persistence in adding tweek to the waitlist. */
@@ -1799,7 +1804,7 @@ function mehSkip(){
 		var djname = API.getDJ().username
 		API.moderateForceSkip()
 		if (Math.random() > 0.6){
-			setTimeout(function(){API.sendChat("@"+djname+" Вы киберунижены.")},500)
+			setTimeout(function(){kittSendChat("@"+djname+" Вы киберунижены.")},500)
 		}
 	}
 	return
@@ -1906,14 +1911,14 @@ function sameArtist(){
 	for (var i=0; i<songlist.length; i++){
 		if (songlist[i][1]===artist){
 			if (songlist[i][4]>1 && (time - songlist[i][3])<3*60*60*1000 && (time - songlist[i][5])<3*60*60*1000){
-				API.sendChat("@"+dj+", That song has been played very recently. Please, be more diverse in your music choice.")
+				kittSendChat("@"+dj+", That song has been played very recently. Please, be more diverse in your music choice.")
 				return
 			}
 			if ((time - songlist[i][5])<ql*4*60*1000){
  				played++
 			} 
 			if (played===2){
-				API.sendChat("@"+dj+", A song by that artist has been played very recently. Please, be more diverse in your music choice.")
+				kittSendChat("@"+dj+", A song by that artist has been played very recently. Please, be more diverse in your music choice.")
 				return
 			}
 		}
@@ -1958,7 +1963,7 @@ function toggleCycle(manual){
 		if (queue>14 && DJCYCLE!=false){
 			API.moderateDJCycle(false)
 			DJCYCLE = false
-			API.sendChat("@djs Цикл отключен! Не забываем вставать в очередь!")
+			kittSendChat("@djs Цикл отключен! Не забываем вставать в очередь!")
 		}
 		if (queue<10 && DJCYCLE!=true){
 			API.moderateDJCycle(true)
@@ -1999,7 +2004,7 @@ function wakeUp(){
 	var uid = API.getWaitList()[0].id
 	var name = API.getWaitList()[0].username
 	if (PATRONS[uid].alarm){
-		API.sendChat("@"+name+", wake up!")
+		kittSendChat("@"+name+", wake up!")
 		PATRONS[uid].alarm = false
 	}
 	return
@@ -2042,7 +2047,7 @@ function recordSkip(mod,mix){
 
 function welcomeUser(user){
 	if (!(WLCMSG && SETTINGS.welcome)){return}
-	API.sendChat("@"+user.username+" "+WLCMSG)
+	kittSendChat("@"+user.username+" "+WLCMSG)
 	return
 };
 
@@ -2077,7 +2082,7 @@ function checkConnection(){
 	}
 	if (getChatRate('short')===0){
 		lost_connection_count++
-		API.sendChat("!connected")
+		kittSendChat("!connected")
 		// MutationObserver should catch the message deletion. If that didn't happen (twice in a row) — restart.
 		// Timeout is because it takes some time to send and delete the message.
 		// 5 seconds is long enough to not classify lags as a lost connection.
@@ -2126,6 +2131,18 @@ function checkStuck(){
 };
 
 			// SUPPORTING FUNCTIONS
+function kittSendChat(string){
+	if (!/(^[!\/](?!me ))|(^\/me.!)/.test(string)){
+		API.sendChat(string)
+	} else {
+		if (string.slice(0,5) == "/me !"){
+			API.sendChat("/me *"+string.slice(5))	
+		} else {
+			API.sendChat("*"+string)
+		}
+	}
+};
+			
 function kittLog(object){
 	if (SETTINGS.log){
 		var dt = new Date()
@@ -2212,7 +2229,7 @@ function swearingDetect(chatobj, test){
 			SWEARS.push([time, chatobj.un, test, text, pattern.toString(), match[0], "ORIGINAL: "+(chatobj.orig || orig)])
 		}
 		kittLog(SWEARS[SWEARS.length-1])
-		if (test){API.sendChat("That's swearing."); return false}
+		if (test){kittSendChat("That's swearing."); return false}
 	} else if (test){
 		SWEARS.push([time, chatobj.un, test, text, "NOT A SWEAR"])
 	}
@@ -2238,7 +2255,7 @@ function swearingMute(chatobj){
 				var wlcm = WLCMSG
 				SETTINGS.welcome = true
 				WLCMSG = "Добро пожаловать на вечер чистого языка! Не ругаемся матом и прочими некрасивыми словами."
-				API.sendChat("Культурный вечер начался! Пожалуйста, следите за выражениями!")
+				kittSendChat("Культурный вечер начался! Пожалуйста, следите за выражениями!")
 				timeouts.swear = setTimeout(function(){
 					SETTINGS.swear = false
 					SETTINGS.welcome = wlc
@@ -2252,7 +2269,7 @@ function swearingMute(chatobj){
 	if (swear){
 		chatTools.mute('swearing', 'frederik.torve', chatobj.un, 1)
 		PATRONS[chatobj.uid].chchmutes++
-		API.sendChat("@"+chatobj.un+", You've been muted for 1 minute for swearing. Please don't.")
+		kittSendChat("@"+chatobj.un+", You've been muted for 1 minute for swearing. Please don't.")
 	}
 	return
 };
@@ -2299,10 +2316,10 @@ function proposalVoting(data){
 			VOTING.voters.push(uid)
 			VOTING.propvotes[0]++
 			if (VOTING.voters.length%5===0){
-				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
+				setTimeout(function(){kittSendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
-			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
+			kittSendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
 	};
@@ -2311,10 +2328,10 @@ function proposalVoting(data){
 			VOTING.voters.push(uid)
 			VOTING.propvotes[1]++
 			if (VOTING.voters.length%5===0){
-				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
+				setTimeout(function(){kittSendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
-			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
+			kittSendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
 	};
@@ -2325,17 +2342,17 @@ function proposalVoting(data){
 			n = Number(chat[1])-1
 		} catch(e){return}
 		if (n>VOTING.proposals.length){
-			API.sendChat("No such option in the poll.")
+			kittSendChat("No such option in the poll.")
 			return
 		}
 		if (VOTING.voters.indexOf(uid)<0){
 			VOTING.voters.push(uid)
 			VOTING.proposals[n][1]+=1
 			if (VOTING.voters.length%5===0){
-				setTimeout(function(){API.sendChat(VOTING.voters.length+" people have voted!")},1000)
+				setTimeout(function(){kittSendChat(VOTING.voters.length+" people have voted!")},1000)
 			}
 		} else {
-			API.sendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
+			kittSendChat("@"+uname+", You have already voted. You can't revoke or change your vote.")
 		}
 		return
 	};
@@ -2344,15 +2361,15 @@ function proposalVoting(data){
 		// If 'proposal' is declared, the single-option voting is in process.
 		if (VOTING.proposal){
 			if (VOTING.propvotes[0]===0 && propvotes[1]===0){
-				API.sendChat("No one has voted.")
-				API.sendChat("/votefinish")
+				kittSendChat("No one has voted.")
+				kittSendChat("/votefinish")
 				return
 			}
 			var yea = "The majority has voted in favor of the proposal."
 			var nay = "The majority has ruled against the proposal. No revolution today, sorry."
 			var result = [nay,yea][+(VOTING.propvotes[1]<VOTING.propvotes[0])]
-			API.sendChat(result)
-			API.sendChat("/votefinish")			
+			kittSendChat(result)
+			kittSendChat("/votefinish")			
 			return
 		}
 		// If 'proposals' is not null, then multiple-option voting is in process.
@@ -2368,17 +2385,17 @@ function proposalVoting(data){
 				}
 			}
 			if (maxvotes===0){
-				API.sendChat("No one has voted.")
-				API.sendChat("/votefinish")
+				kittSendChat("No one has voted.")
+				kittSendChat("/votefinish")
 				return
 			}
 			if (winprop.length===1){
 				var result = VOTING.proposals[winprop[0]][0]
 				if (!(/[.!?]/.test(result.slice(-1)))) {result+="."} // Add a full stop at the end of result if it's not there.
-				API.sendChat("The winning option of today's voting is: "+result.slice(0,-1)+", with "+maxvotes+" votes.")
-				API.sendChat("/votefinish")
+				kittSendChat("The winning option of today's voting is: "+result.slice(0,-1)+", with "+maxvotes+" votes.")
+				kittSendChat("/votefinish")
 			} else if (winprop.length>=4){
-				API.sendChat('Four or more options have the same score of '+maxvotes+' votes. I strongly advise you to revote. Type "!revote" to do that.')
+				kittSendChat('Four or more options have the same score of '+maxvotes+' votes. I strongly advise you to revote. Type "!revote" to do that.')
 				VOTING.reproposals = VOTING.proposals
 				VOTING.proposals = null
 			} else {
@@ -2394,8 +2411,8 @@ function proposalVoting(data){
 				VOTING.tiedproposals.forEach(function(elem){elem[1]=0})
 				VOTING.proposals = null
 				clearTimeouts("voting")
-				API.sendChat(winprop.length+" options are tied with "+maxvotes+" votes each. They are: "+ties)
-				setTimeout(function(){API.sendChat('If you would like to restart the voting with those options only, type "!voteties"')},500)
+				kittSendChat(winprop.length+" options are tied with "+maxvotes+" votes each. They are: "+ties)
+				setTimeout(function(){kittSendChat('If you would like to restart the voting with those options only, type "!voteties"')},500)
 				proposalVoting("/votefinish")
 			}
 		}
@@ -2404,9 +2421,9 @@ function proposalVoting(data){
 	if (chat[0].toLowerCase()==="!votestandings") {
 		if (VOTING.proposal) {
 			if (VOTING.propvotes[0] === 0 && VOTING.propvotes[1] === 0){
-				API.sendChat("No one has voted yet")
+				kittSendChat("No one has voted yet")
 			} else {
-				API.sendChat("Currently "+VOTING.propvotes[0]+" have voted 'yea', and "+VOTING.propvotes[1]+" have voted 'nay'")
+				kittSendChat("Currently "+VOTING.propvotes[0]+" have voted 'yea', and "+VOTING.propvotes[1]+" have voted 'nay'")
 			}
 			return
 		}
@@ -2422,13 +2439,13 @@ function proposalVoting(data){
 				}
 			}
 			if (maxvotes === 0){
-				API.sendChat("No one has voted yet")
+				kittSendChat("No one has voted yet")
 				return
 			}
 			if (winprop.length === 1) {
-				API.sendChat("Currently the leading option is '"+VOTING.proposals[winprop[0]][0]+"' with "+maxvotes+" votes.")
+				kittSendChat("Currently the leading option is '"+VOTING.proposals[winprop[0]][0]+"' with "+maxvotes+" votes.")
 			} else {
-				API.sendChat("Two or more options are tied with "+maxvotes+" votes each")
+				kittSendChat("Two or more options are tied with "+maxvotes+" votes each")
 			}
 			return
 		}
@@ -2469,12 +2486,12 @@ function proposalVoting(data){
 	};
 	if (chat[0].toLowerCase()==="!voteremind" && (assertPermission(uid,2) || VOTING.votestarter === uid)) {
 		if (VOTING.proposal) {
-			API.sendChat("The voting is in progress. Today's proposal is: "+VOTING.proposal+'. Vote by typing "!voteyea" or "!votenay"')
+			kittSendChat("The voting is in progress. Today's proposal is: "+VOTING.proposal+'. Vote by typing "!voteyea" or "!votenay"')
 		}
 		if (VOTING.proposals) {
 			var chat = "The voting is in progress. Options are"+VOTING.propchat.slice(VOTING.propchat.indexOf(":"))
-			API.sendChat(chat)
-			setTimeout(function(){API.sendChat('Please vote for an option of your choice by typing "!vote #"')},500)
+			kittSendChat(chat)
+			setTimeout(function(){kittSendChat('Please vote for an option of your choice by typing "!vote #"')},500)
 		}
 	};
 	if (data==="/votefinish"){
@@ -2503,7 +2520,7 @@ function enlistment(data){
 	}
 	if (command === "signed"){
 		function chatTimeout(i){
-			setTimeout(function(){API.sendChat("The following people have decided to join: "+signed.slice(i*15,(i+1)*15).join(", ")+".")},i*250)
+			setTimeout(function(){kittSendChat("The following people have decided to join: "+signed.slice(i*15,(i+1)*15).join(", ")+".")},i*250)
 		}
 		var signed = []
 		for (var id in VOTING.signedusers){
@@ -2722,7 +2739,7 @@ function checkSpam(uid, name, command){
 	}
 	
 	if (PATRONS[uid].samecommand === 4) {
-		API.sendChat("@"+name+" If you send the same command once more, divine punishment will befall you.")
+		kittSendChat("@"+name+" If you send the same command once more, divine punishment will befall you.")
 		return true
 	};
 	if (PATRONS[uid].samecommand >= 5) {
@@ -2980,24 +2997,24 @@ function hangman(chat,type,name){
 		if (chat.toLowerCase()===wrd.toLowerCase()){
 			wrdg = wrd
 		} else{
-			API.sendChat("Sorry, that's not the word!")
+			kittSendChat("Sorry, that's not the word!")
 		}
 	};
 	if (type==="letter"){
 		if (HANGMAN.language=="Russian" && !/^[а-яёй]$/.test(chat)){return}
 		if (HANGMAN.language=="English" && !/^[a-z]$/.test(chat)){return}
 		if (HANGMAN.tried.indexOf(chat.toLowerCase())>-1){
-			API.sendChat("That letter has already been guessed!")
+			kittSendChat("That letter has already been guessed!")
 		} else{
 			indc = letind(wrd.toLowerCase(), chat.toLowerCase())
 			if (indc.length>0){
-				API.sendChat("Correct!")
+				kittSendChat("Correct!")
 				for (i=0; i<indc.length; i++){
 					wrdg = wrdg.substr(0,indc[i]*2)+wrd[indc[i]]+wrdg.substr(indc[i]*2+1)
 				}
-				if (wrdg.indexOf("_")>=0){setTimeout(function(){API.sendChat(wrdg)},250)}
+				if (wrdg.indexOf("_")>=0){setTimeout(function(){kittSendChat(wrdg)},250)}
 			} else{
-				API.sendChat("Sorry, no such letter in the word!")
+				kittSendChat("Sorry, no such letter in the word!")
 				HANGMAN.count++
 			}
 		}
@@ -3005,7 +3022,7 @@ function hangman(chat,type,name){
 	};
 	HANGMAN.uword = wrdg	
 	if (wrdg===wrd || wrdg.indexOf("_")===-1){
-		setTimeout(function(){API.sendChat("Congratulations @"+name+", you have won! The word was: "+wrd)},(250))
+		setTimeout(function(){kittSendChat("Congratulations @"+name+", you have won! The word was: "+wrd)},(250))
 		var uid = getUID(name)
 		PATRONS[uid].hangmanwords.push(HANGMAN.word)
 		PATRONS[uid].hangmanwins++
@@ -3015,7 +3032,7 @@ function hangman(chat,type,name){
 		return
 	};
 	if (HANGMAN.count>=10){
-		setTimeout(function(){API.sendChat("Ah, wrong once again! You've been hung. The word was: "+wrd)},(250))
+		setTimeout(function(){kittSendChat("Ah, wrong once again! You've been hung. The word was: "+wrd)},(250))
 		mode = "normal"
 		HANGMAN = Object.create(null)
 		API.off(API.CHAT, hangmanChat)
@@ -3027,7 +3044,7 @@ function hangman(chat,type,name){
 function russianRoulette(uid, name, argument){
 	PATRONS[uid].lastcommand = null
 	if (argument==="score"){
-		API.sendChat("@"+name+" "+PATRONS[uid].roulette+", "+(""+Math.pow(0.833,PATRONS[uid].roulette)*100).slice(0,5)+"%")
+		kittSendChat("@"+name+" "+PATRONS[uid].roulette+", "+(""+Math.pow(0.833,PATRONS[uid].roulette)*100).slice(0,5)+"%")
 		return
 	}
 	if (argument==="highest"){
@@ -3037,7 +3054,7 @@ function russianRoulette(uid, name, argument){
 				highest = false
 			}
 		}
-		API.sendChat("@"+name+"'s highest score was "+PATRONS[uid].rouletterecord+", "+(""+Math.pow(0.833,PATRONS[uid].rouletterecord)*100).slice(0,5)+"%"+
+		kittSendChat("@"+name+"'s highest score was "+PATRONS[uid].rouletterecord+", "+(""+Math.pow(0.833,PATRONS[uid].rouletterecord)*100).slice(0,5)+"%"+
 			["",". Highest in this room!"][~~highest])
 		return
 	}
@@ -3048,22 +3065,22 @@ function russianRoulette(uid, name, argument){
 				max = [PATRONS[key].rouletterecord,PATRONS[key].name]
 			}
 		}
-		API.sendChat(max[1]+" is the luckiest person in this room with "+max[0]+" consecutive clicks.")
+		kittSendChat(max[1]+" is the luckiest person in this room with "+max[0]+" consecutive clicks.")
 		return
 	}
 	if (Math.random()<=(1/6)){
 		PATRONS[uid].roulette = 0
-		API.sendChat("/me @"+name+" BANG!")
+		kittSendChat("/me @"+name+" BANG!")
 		var role = API.getUser(uid).role
 		if (role>0) {staffMute({uid: uid, duration: 0}) 
 		} else {userMute({uid: uid, duration: 0})}
-		setTimeout(function(){API.sendChat("@"+name+" You've been muted for 15 minutes.")},250)
+		setTimeout(function(){kittSendChat("@"+name+" You've been muted for 15 minutes.")},250)
 	} else {
 		PATRONS[uid].roulette = PATRONS[uid].roulette+1
 		if (PATRONS[uid].roulette>PATRONS[uid].rouletterecord){
 			PATRONS[uid].rouletterecord = PATRONS[uid].roulette
 		}
-		API.sendChat("/me @"+name+" click")
+		kittSendChat("/me @"+name+" click")
 	}
 	return
 };
